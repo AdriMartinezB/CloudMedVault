@@ -114,3 +114,79 @@ class CloudStorageManager:
                     time.sleep(0.1 * (attempt + 1))
                 finally:
                     conn.close()
+
+    def append_audit_log(
+        self,
+        actor: str,
+        role: str,
+        action: str,
+        resource_id: str,
+        node_id: str,
+        status: str = "SUCCESS",
+    ) -> Dict[str, Any]:
+        """Registra un evento en la cadena de auditoría inmutable con encadenamiento SHA-256."""
+        with self._lock:
+            for attempt in range(10):
+                conn = self._get_conn()
+                try:
+                    conn.isolation_level = None
+                    conn.execute("BEGIN IMMEDIATE")
+                    cur = conn.execute(
+                        "SELECT entry_hash FROM audit_logs ORDER BY seq_id DESC LIMIT 1"
+                    )
+                    row = cur.fetchone()
+                    prev_hash = row["entry_hash"] if row else "0" * 64
+                    event_id = f"AUD-{uuid.uuid4().hex[:12].upper()}"
+                    ts = round(time.time(), 6)
+                    canonical = f"{event_id}|{ts:.6f}|{actor}|{role}|{action}|{resource_id}|{node_id}|{status}|{prev_hash}"
+                    entry_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+                    conn.execute(
+                        """
+                        INSERT INTO audit_logs
+                        (event_id, timestamp, actor, role, action, resource_id, node_id, status, prev_hash, entry_hash)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (event_id, ts, actor, role, action, resource_id, node_id, status, prev_hash, entry_hash),
+                    )
+                    conn.execute("COMMIT")
+                    return {
+                        "event_id": event_id,
+                        "timestamp": ts,
+                        "prev_hash": prev_hash,
+                        "entry_hash": entry_hash,
+                    }
+                except sqlite3.OperationalError:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    if attempt == 9:
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
+                finally:
+                    conn.close()
+        raise RuntimeError("No se pudo registrar el evento de auditoría")
+
+    def verify_audit_chain(self) -> Dict[str, Any]:
+        """Verifica criptográficamente toda la cadena de auditoría para detectar alteraciones."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute("SELECT * FROM audit_logs ORDER BY seq_id ASC").fetchall()
+            expected_prev = "0" * 64
+            verified_count = 0
+            for r in rows:
+                canonical = (
+                    f"{r['event_id']}|{r['timestamp']:.6f}|{r['actor']}|{r['role']}|"
+                    f"{r['action']}|{r['resource_id']}|{r['node_id']}|{r['status']}|{r['prev_hash']}"
+                )
+                recalculated = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+                if r["prev_hash"] != expected_prev or recalculated != r["entry_hash"]:
+                    return {
+                        "intact": False,
+                        "verified_records": verified_count,
+                        "corrupted_seq_id": r["seq_id"],
+                    }
+                expected_prev = r["entry_hash"]
+                verified_count += 1
+            return {
+                "intact": True,
