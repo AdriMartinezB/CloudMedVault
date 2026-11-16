@@ -480,3 +480,433 @@ async def run_workload_for_algorithm(
 
 
 def generate_charts(
+    rr_results: Dict[str, Any],
+    raj_results: Dict[str, Any],
+) -> None:
+    """Genera las 4 figuras de alta resolución para incluir en el informe PDF y la presentación."""
+    plt.rcParams["font.sans-serif"] = "DejaVu Sans"
+    plt.rcParams["axes.edgecolor"] = "#cbd5e1"
+    plt.rcParams["axes.linewidth"] = 0.8
+
+    # FIGURA 1: Comparativa de Latencias (Media, Mediana P50, P95, P99)
+    fig, ax = plt.subplots(figsize=(8.5, 4.6), dpi=220)
+    metrics_labels = ["Media", "Mediana (P50)", "Percentil 95 (P95)", "Percentil 99 (P99)"]
+    rr_vals = [
+        rr_results["mean_latency_ms"],
+        rr_results["median_p50_ms"],
+        rr_results["p95_latency_ms"],
+        rr_results["p99_latency_ms"],
+    ]
+    raj_vals = [
+        raj_results["mean_latency_ms"],
+        raj_results["median_p50_ms"],
+        raj_results["p95_latency_ms"],
+        raj_results["p99_latency_ms"],
+    ]
+
+    x = range(len(metrics_labels))
+    width = 0.35
+    bars1 = ax.bar(
+        [i - width / 2 for i in x],
+        rr_vals,
+        width,
+        label="Round-Robin Estático (Tradicional)",
+        color="#ef4444",
+        edgecolor="#991b1b",
+    )
+    bars2 = ax.bar(
+        [i + width / 2 for i in x],
+        raj_vals,
+        width,
+        label="Dinámico Multicriterio (Rajammal et al., 2025)",
+        color="#0284c7",
+        edgecolor="#075985",
+    )
+
+    ax.set_ylabel("Tiempo de Respuesta / Latencia (ms)", fontsize=10, fontweight="bold", color="#1e293b")
+    ax.set_title(
+        "Comparativa de Latencia Bajo Cargas Variables: Round-Robin vs. Rajammal et al. (2025)",
+        fontsize=11.5,
+        fontweight="bold",
+        color="#0f172a",
+        pad=14,
+    )
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(metrics_labels, fontsize=9.5, fontweight="bold")
+    ax.grid(axis="y", linestyle="--", alpha=0.5)
+    ax.legend(frameon=True, facecolor="#f8fafc", fontsize=9.5)
+
+    for b in list(bars1) + list(bars2):
+        h = b.get_height()
+        ax.annotate(
+            f"{h:.1f} ms",
+            xy=(b.get_x() + b.get_width() / 2, h),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=8.5,
+            fontweight="bold",
+        )
+    ax.set_ylim(0, max(rr_vals) * 1.18)
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR / "fig1_latency_comparison.png", dpi=220)
+    plt.close(fig)
+
+    # FIGURA 2: Distribución de Peticiones por Nodo Heterogéneo
+    fig, ax = plt.subplots(figsize=(8.5, 4.6), dpi=220)
+    node_names = [
+        "node-1\n(c6i.large - Cap 1.6x)",
+        "node-2\n(t3.medium - Cap 1.0x)",
+        "node-3\n(t3.small - Cap 0.6x)",
+        "node-4 (Elástico)\n(c6i.spot - Cap 1.4x)",
+    ]
+    keys = ["node-1", "node-2", "node-3", "node-4"]
+    rr_dist = [rr_results["node_distribution"].get(k, 0) for k in keys]
+    raj_dist = [raj_results["node_distribution"].get(k, 0) for k in keys]
+
+    x2 = range(len(keys))
+    b1 = ax.bar(
+        [i - width / 2 for i in x2],
+        rr_dist,
+        width,
+        label="Round-Robin Estático (Ignora Capacidad)",
+        color="#f97316",
+    )
+    b2 = ax.bar(
+        [i + width / 2 for i in x2],
+        raj_dist,
+        width,
+        label="Balanceo Dinámico + Auto-Scaling (Rajammal et al., 2025)",
+        color="#10b981",
+    )
+    ax.set_ylabel("Peticiones Enrutadas (Total = 120)", fontsize=10, fontweight="bold")
+    ax.set_title(
+        "Distribución de Carga por Nodo según Capacidad de Cómputo y Escalado Elástico",
+        fontsize=11.5,
+        fontweight="bold",
+        pad=14,
+    )
+    ax.set_xticks(list(x2))
+    ax.set_xticklabels(node_names, fontsize=9)
+    ax.grid(axis="y", linestyle="--", alpha=0.5)
+    ax.legend(frameon=True, facecolor="#f8fafc", fontsize=9.5)
+
+    for b in list(b1) + list(b2):
+        h = b.get_height()
+        ax.annotate(
+            f"{int(h)} req",
+            xy=(b.get_x() + b.get_width() / 2, h),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=8.5,
+            fontweight="bold",
+        )
+    ax.set_ylim(0, max(rr_dist + raj_dist) * 1.2)
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR / "fig2_node_distribution.png", dpi=220)
+    plt.close(fig)
+
+    # FIGURA 3: Desempeño por Fase de Carga Variable y Auto-Scaling
+    fig, ax1 = plt.subplots(figsize=(8.5, 4.6), dpi=220)
+    phase_names = [
+        "Fase 1\n(Carga Baja - 2c)",
+        "Fase 2\n(Carga Media - 5c)",
+        "Fase 3\n(Ráfaga UCI - 12c)",
+        "Fase 4\n(Recuperación - 2c)",
+    ]
+    rr_phase_lat = [p["mean_latency_ms"] for p in rr_results["phases"]]
+    raj_phase_lat = [p["mean_latency_ms"] for p in raj_results["phases"]]
+    raj_nodes = [p["active_nodes"] for p in raj_results["phases"]]
+
+    ax1.plot(
+        phase_names,
+        rr_phase_lat,
+        marker="o",
+        linewidth=2.5,
+        color="#ef4444",
+        label="Latencia Media - Round-Robin (ms)",
+    )
+    ax1.plot(
+        phase_names,
+        raj_phase_lat,
+        marker="s",
+        linewidth=2.5,
+        color="#0284c7",
+        label="Latencia Media - Dinámico Rajammal (ms)",
+    )
+    ax1.set_ylabel("Latencia Media por Fase (ms)", fontsize=10, fontweight="bold", color="#0f172a")
+    ax1.grid(True, linestyle="--", alpha=0.5)
+
+    ax2 = ax1.twinx()
+    ax2.step(
+        phase_names,
+        raj_nodes,
+        where="mid",
+        linestyle=":",
+        linewidth=2.2,
+        color="#10b981",
+        label="Nodos Activos en Pool (Auto-Scaling)",
+    )
+    ax2.set_ylabel("Nodos Activos en el Clúster", fontsize=10, fontweight="bold", color="#047857")
+    ax2.set_ylim(1, 5)
+    ax2.set_yticks([2, 3, 4])
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left", fontsize=8.8, frameon=True)
+    plt.title(
+        "Comportamiento Elástico ante Cargas Variables (Scale-Out en Ráfaga y Scale-In)",
+        fontsize=11.5,
+        fontweight="bold",
+        pad=14,
+    )
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR / "fig3_dynamic_autoscaling_timeline.png", dpi=220)
+    plt.close(fig)
+
+    # FIGURA 4: Diagrama de Arquitectura Cloud AWS + Seguridad MinTIC (2021)
+    fig, ax = plt.subplots(figsize=(10.0, 5.4), dpi=220)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 60)
+    ax.axis("off")
+
+    def draw_box(x, y, w, h, title, subtitle, bg="#e0f2fe", border="#0284c7", title_color="#0f172a"):
+        rect = mpatches.FancyBboxPatch(
+            (x, y),
+            w,
+            h,
+            boxstyle="round,pad=0.6,rounding_size=1.5",
+            facecolor=bg,
+            edgecolor=border,
+            linewidth=1.6,
+        )
+        ax.add_patch(rect)
+        ax.text(
+            x + w / 2,
+            y + h * 0.65,
+            title,
+            ha="center",
+            va="center",
+            fontsize=9.2,
+            fontweight="bold",
+            color=title_color,
+        )
+        ax.text(
+            x + w / 2,
+            y + h * 0.28,
+            subtitle,
+            ha="center",
+            va="center",
+            fontsize=7.6,
+            color="#334155",
+        )
+
+    # Marco general AWS VPC
+    vpc_rect = mpatches.FancyBboxPatch(
+        (22, 4),
+        76,
+        51,
+        boxstyle="round,pad=0.8,rounding_size=2.0",
+        facecolor="#f8fafc",
+        edgecolor="#475569",
+        linewidth=1.5,
+        linestyle="--",
+    )
+    ax.add_patch(vpc_rect)
+    ax.text(
+        60,
+        56.8,
+        "AWS Cloud (Región us-east-1) — VPC Segmentada con Controles MinTIC (2021) MSPI",
+        ha="center",
+        va="center",
+        fontsize=10.5,
+        fontweight="bold",
+        color="#0f172a",
+    )
+
+    # Clientes externos
+    draw_box(2, 34, 16, 13, "Personal Médico", "Portal Web HTTPS\nTLS 1.3 + JWT RBAC", "#fef3c7", "#d97706")
+    draw_box(2, 13, 16, 13, "Sensores IoT UCI", "Telemetría Biomédica\nToken Mínimo Privilegio", "#fef3c7", "#d97706")
+
+    # Capa Perimetral DMZ
+    draw_box(
+        25,
+        21,
+        19,
+        22,
+        "API Gateway + WAF\n& Balanceador Dinámico",
+        "Reglas OWASP + Rate Limit\nAlgoritmo Rajammal (2025)\nPesos CPU/RAM/Conn/Lat",
+        "#dbeafe",
+        "#1d4ed8",
+    )
+
+    # Clúster de Cómputo ECS Fargate Multi-AZ
+    draw_box(49, 41, 20, 10, "Nodo 1 (AZ-a)", "ecs.c6i.large (Cap 1.6x)\nFastAPI Microservice", "#dcfce7", "#15803d")
+    draw_box(49, 29, 20, 10, "Nodo 2 (AZ-b)", "ecs.t3.medium (Cap 1.0x)\nFastAPI Microservice", "#dcfce7", "#15803d")
+    draw_box(49, 17, 20, 10, "Nodo 3 (AZ-c)", "ecs.t3.small (Cap 0.6x)\nFastAPI Microservice", "#dcfce7", "#15803d")
+    draw_box(
+        49,
+        5,
+        20,
+        10,
+        "Nodo 4 (Auto-Scaling)",
+        "ecs.c6i.spot (Cap 1.4x)\nScale-Out / Scale-In",
+        "#fef9c3",
+        "#ca8a04",
+    )
+
+    # Capa de Almacenamiento y Seguridad Criptográfica
+    draw_box(
+        74,
+        39,
+        22,
+        12,
+        "Amazon RDS Multi-AZ",
+        "Historias Clínicas Cifradas\nAES-256-GCM + Pseudónimo",
+        "#f3e8ff",
+        "#7e22ce",
+    )
+    draw_box(
+        74,
+        23,
+        22,
+        12,
+        "Amazon S3 (SSE-KMS)",
+        "Documentos e Imágenes\nCifrado AES-256 + SHA-256",
+        "#f3e8ff",
+        "#7e22ce",
+    )
+    draw_box(
+        74,
+        7,
+        22,
+        12,
+        "AWS KMS + Auditoría",
+        "Rotación de Claves CMK\nHash-Chain Inmutable SHA-256",
+        "#ffe4e6",
+        "#be123c",
+    )
+
+    # Flechas de conexión
+    arrow_kw = dict(arrowstyle="->", color="#334155", lw=1.5)
+    ax.annotate("", xy=(25, 35), xytext=(18, 40), arrowprops=arrow_kw)
+    ax.annotate("", xy=(25, 28), xytext=(18, 20), arrowprops=arrow_kw)
+    for ny in (46, 34, 22, 10):
+        ax.annotate("", xy=(49, ny), xytext=(44, 32), arrowprops=arrow_kw)
+        ax.annotate("", xy=(74, 45), xytext=(69, ny), arrowprops=dict(arrowstyle="->", color="#64748b", lw=1.1))
+        ax.annotate("", xy=(74, 29), xytext=(69, ny), arrowprops=dict(arrowstyle="->", color="#64748b", lw=1.1))
+        ax.annotate("", xy=(74, 13), xytext=(69, ny), arrowprops=dict(arrowstyle="->", color="#64748b", lw=1.1))
+
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR / "fig4_architecture_diagram.png", dpi=220)
+    plt.close(fig)
+
+
+async def main() -> None:
+    print("[1/4] Iniciando clúster CloudMedVault (4 nodos de cómputo + Balanceador Dinámico)...")
+    procs = start_cluster_processes()
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            await wait_for_cluster_ready(client)
+            print("[2/4] Ejecutando pruebas funcionales y de seguridad MinTIC (2021)...")
+            sec_results = await run_security_and_functional_tests(client)
+
+            # Obtener tokens para benchmark
+            r_iot = await client.post(
+                f"{LB_URL}/api/v1/auth/token",
+                json={"username": "gateway.iot", "password": "IoTGateway#2026!"},
+            )
+            r_med = await client.post(
+                f"{LB_URL}/api/v1/auth/token",
+                json={"username": "dr.ramirez", "password": "MedCloud#2026!"},
+            )
+            r_adm = await client.post(
+                f"{LB_URL}/api/v1/auth/token",
+                json={"username": "admin.seguridad", "password": "AdminMinTIC#2026!"},
+            )
+            iot_token = r_iot.json()["access_token"]
+            med_token = r_med.json()["access_token"]
+            adm_token = r_adm.json()["access_token"]
+
+            print("[3/4] Ejecutando benchmark comparativo: Round-Robin vs. Rajammal et al. (2025)...")
+            rr_bench = await run_workload_for_algorithm(client, iot_token, med_token, "round_robin")
+            raj_bench = await run_workload_for_algorithm(client, iot_token, med_token, "rajammal_dynamic")
+
+            storage_summary = (
+                await client.get(
+                    f"{LB_URL}/api/v1/storage/summary",
+                    headers={"Authorization": f"Bearer {adm_token}"},
+                )
+            ).json()
+            audit_verification = (
+                await client.get(
+                    f"{LB_URL}/api/v1/audit/verify",
+                    headers={"Authorization": f"Bearer {adm_token}"},
+                )
+            ).json()
+
+            # Calcular mejoras porcentuales del algoritmo dinámico frente a Round-Robin
+            mean_improvement_pct = round(
+                ((rr_bench["mean_latency_ms"] - raj_bench["mean_latency_ms"]) / rr_bench["mean_latency_ms"]) * 100.0,
+                2,
+            )
+            p95_improvement_pct = round(
+                ((rr_bench["p95_latency_ms"] - raj_bench["p95_latency_ms"]) / rr_bench["p95_latency_ms"]) * 100.0,
+                2,
+            )
+            throughput_gain_pct = round(
+                ((raj_bench["throughput_rps"] - rr_bench["throughput_rps"]) / rr_bench["throughput_rps"]) * 100.0,
+                2,
+            )
+
+            full_report_data = {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "security_and_functional_tests": sec_results,
+                "benchmarks": {
+                    "round_robin": rr_bench,
+                    "rajammal_dynamic": raj_bench,
+                    "improvements": {
+                        "mean_latency_reduction_pct": mean_improvement_pct,
+                        "p95_latency_reduction_pct": p95_improvement_pct,
+                        "throughput_increase_pct": throughput_gain_pct,
+                    },
+                },
+                "storage_summary": storage_summary,
+                "audit_verification": audit_verification,
+            }
+
+            (RESULTS_DIR / "benchmark_results.json").write_text(
+                json.dumps(full_report_data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            print("[4/4] Generando gráficas de resultados y arquitectura...")
+            generate_charts(rr_bench, raj_bench)
+            print("=== PRUEBAS Y BENCHMARKS COMPLETADOS EXITOSAMENTE ===")
+            print(f"  - Pruebas de seguridad superadas: {sec_results['passed_tests']}/{sec_results['total_tests']}")
+            print(
+                f"  - Latencia Media: Round-Robin={rr_bench['mean_latency_ms']} ms vs. "
+                f"Rajammal Dinámico={raj_bench['mean_latency_ms']} ms "
+                f"(Reducción del {mean_improvement_pct}%)"
+            )
+            print(
+                f"  - Latencia P95: Round-Robin={rr_bench['p95_latency_ms']} ms vs. "
+                f"Rajammal Dinámico={raj_bench['p95_latency_ms']} ms "
+                f"(Reducción del {p95_improvement_pct}%)"
+            )
+            print(f"  - Eventos Auto-Scaling registrados: {len(raj_bench['scaling_events'])}")
+    finally:
+        for p in procs:
+            p.terminate()
+        for p in procs:
+            try:
+                p.wait(timeout=3)
+            except Exception:
+                p.kill()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
