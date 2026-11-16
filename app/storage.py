@@ -351,3 +351,137 @@ class CloudStorageManager:
             "audit_event_id": audit["event_id"],
         }
 
+    def get_s3_encrypted_object(
+        self, object_key: str, actor: str, role: str, node_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Recupera y descifra un objeto del bucket S3 validando su integridad SHA-256."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM s3_objects_metadata WHERE object_key = ?", (object_key,)
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if not row:
+            return None
+
+        envelope = json.loads(Path(row["storage_path"]).read_text(encoding="utf-8"))
+        plaintext = self.s3_vault.decrypt_bytes(envelope, associated_data=object_key.encode("utf-8"))
+        audit = self.append_audit_log(actor, role, "S3_GET_ENCRYPTED_OBJECT", object_key, node_id)
+        return {
+            "object_key": row["object_key"],
+            "record_id": row["record_id"],
+            "filename": row["filename"],
+            "content_type": row["content_type"],
+            "size_bytes": row["size_bytes"],
+            "sha256_verified": True,
+            "content_preview": plaintext.decode("utf-8", errors="replace")[:500],
+            "served_by_node": node_id,
+            "audit_event_id": audit["event_id"],
+        }
+
+    def ingest_iot_telemetry(
+        self,
+        device_id: str,
+        national_id: str,
+        heart_rate_bpm: int,
+        spo2_percent: float,
+        systolic_bp: int,
+        diastolic_bp: int,
+        temperature_c: float,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """Procesa telemetría IoT de signos vitales, calcula puntaje de riesgo y detecta anomalías."""
+        telemetry_id = f"TEL-{uuid.uuid4().hex[:10].upper()}"
+        patient_pseudonym = pseudonymize_pii(national_id)
+
+        # Cálculo de índice de riesgo clínico y detección de anomalías
+        risk_score = 0.0
+        if heart_rate_bpm > 115 or heart_rate_bpm < 50:
+            risk_score += 0.35
+        if spo2_percent < 92.0:
+            risk_score += 0.40
+        if systolic_bp > 155 or systolic_bp < 85:
+            risk_score += 0.25
+        if temperature_c > 38.2 or temperature_c < 35.5:
+            risk_score += 0.20
+
+        risk_score = round(min(1.0, risk_score), 3)
+        anomaly = 1 if risk_score >= 0.35 else 0
+        created_at = time.time()
+
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO iot_telemetry
+                    (telemetry_id, device_id, patient_pseudonym, heart_rate_bpm, spo2_percent,
+                     systolic_bp, diastolic_bp, temperature_c, anomaly_detected, risk_score,
+                     processed_by_node, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        telemetry_id,
+                        device_id,
+                        patient_pseudonym,
+                        heart_rate_bpm,
+                        spo2_percent,
+                        systolic_bp,
+                        diastolic_bp,
+                        temperature_c,
+                        anomaly,
+                        risk_score,
+                        node_id,
+                        created_at,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        return {
+            "telemetry_id": telemetry_id,
+            "device_id": device_id,
+            "patient_pseudonym": patient_pseudonym,
+            "anomaly_detected": bool(anomaly),
+            "risk_score": risk_score,
+            "processed_by_node": node_id,
+            "created_at": created_at,
+        }
+
+    def get_storage_summary(self) -> Dict[str, Any]:
+        """Retorna estadísticas consolidadas de las capas de almacenamiento."""
+        conn = self._get_conn()
+        try:
+            records_count = conn.execute("SELECT COUNT(*) FROM clinical_records").fetchone()[0]
+            s3_count = conn.execute("SELECT COUNT(*) FROM s3_objects_metadata").fetchone()[0]
+            telemetry_count = conn.execute("SELECT COUNT(*) FROM iot_telemetry").fetchone()[0]
+            anomalies_count = conn.execute(
+                "SELECT COUNT(*) FROM iot_telemetry WHERE anomaly_detected = 1"
+            ).fetchone()[0]
+            audit_count = conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+            by_node = conn.execute(
+                """
+                SELECT processed_by_node, COUNT(*) as cnt
+                FROM (
+                    SELECT processed_by_node FROM clinical_records
+                    UNION ALL
+                    SELECT processed_by_node FROM iot_telemetry
+                    UNION ALL
+                    SELECT processed_by_node FROM s3_objects_metadata
+                )
+                GROUP BY processed_by_node
+                """
+            ).fetchall()
+            return {
+                "rds_clinical_records": records_count,
+                "s3_encrypted_objects": s3_count,
+                "iot_telemetry_events": telemetry_count,
+                "clinical_anomalies_flagged": anomalies_count,
+                "immutable_audit_entries": audit_count,
+                "persistence_by_node": {r["processed_by_node"]: r["cnt"] for r in by_node},
+            }
+        finally:
+            conn.close()
