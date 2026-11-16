@@ -83,3 +83,33 @@ class CryptoVault:
 
     def encrypt_json(self, payload: Dict[str, Any], aad_str: str = "") -> str:
         """Serializa un diccionario JSON y lo cifra con AES-256-GCM."""
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        aad = aad_str.encode("utf-8") if aad_str else None
+        envelope = self.encrypt_bytes(raw, aad)
+        return json.dumps(envelope)
+
+    def decrypt_json(self, encrypted_str: str, aad_str: str = "") -> Dict[str, Any]:
+        """Descifra un JSON previamente protegido con AES-256-GCM."""
+        envelope = json.loads(encrypted_str)
+        aad = aad_str.encode("utf-8") if aad_str else None
+        raw = self.decrypt_bytes(envelope, aad)
+        return json.loads(raw.decode("utf-8"))
+
+
+def pseudonymize_pii(national_id: str) -> str:
+    """
+    Pseudonimiza el documento de identidad del paciente usando HMAC-SHA256
+    para cumplir con la Ley 1581 de 2012 (Habeas Data) y MinTIC MSPI.
+    """
+    normalized = national_id.strip().upper().encode("utf-8")
+    digest = hmac.new(PII_HMAC_SALT.encode("utf-8"), normalized, hashlib.sha256).hexdigest()
+    return f"PID-{digest[:24]}"
+
+
+def hash_password(password: str, salt: Optional[bytes] = None) -> str:
+    """Genera hash seguro de contraseña con PBKDF2-HMAC-SHA256."""
+    if salt is None:
+        salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    return f"pbkdf2_sha256$100000${base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
+
