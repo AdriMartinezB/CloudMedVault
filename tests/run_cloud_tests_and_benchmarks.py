@@ -343,3 +343,140 @@ async def run_workload_for_algorithm(
     algorithm_mode: str,
 ) -> Dict[str, Any]:
     """
+    Ejecuta un escenario de carga variable en 4 fases (Baja -> Media -> Ráfaga Alta -> Recuperación)
+    para comparar el desempeño del algoritmo de Rajammal et al. (2025) frente a Round-Robin estático.
+    """
+    await client.post(
+        f"{LB_URL}/lb/config",
+        json={"algorithm_mode": algorithm_mode, "rate_limit_max_req": 1000, "reset_stats": True},
+    )
+    await asyncio.sleep(0.5)
+
+    # Definición de 4 fases de carga dinámica (total = 120 peticiones)
+    phases = [
+        {"name": "Fase 1: Carga Baja", "requests": 20, "concurrency": 2, "complexity": 2},
+        {"name": "Fase 2: Carga Media", "requests": 30, "concurrency": 5, "complexity": 4},
+        {"name": "Fase 3: Ráfaga Crítica UCI (Pico)", "requests": 50, "concurrency": 12, "complexity": 6},
+        {"name": "Fase 4: Enfriamiento / Recuperación", "requests": 20, "concurrency": 2, "complexity": 2},
+    ]
+
+    latencies_ms: List[float] = []
+    node_counts: Dict[str, int] = {"node-1": 0, "node-2": 0, "node-3": 0, "node-4": 0}
+    phase_metrics: List[Dict[str, Any]] = []
+    timeline_series: List[Dict[str, Any]] = []
+    t_zero = time.perf_counter()
+
+    for phase in phases:
+        sem = asyncio.Semaphore(phase["concurrency"])
+        phase_lats: List[float] = []
+
+        async def _worker(req_idx: int, comp: int) -> None:
+            async with sem:
+                t0 = time.perf_counter()
+                if req_idx % 5 == 0:
+                    resp = await client.post(
+                        f"{LB_URL}/api/v1/records",
+                        headers={
+                            "Authorization": f"Bearer {med_token}",
+                            "X-LB-Algorithm": algorithm_mode,
+                            "X-Client-ID": f"bench-{algorithm_mode}-{req_idx % 10}",
+                        },
+                        json={
+                            "national_id": f"1000{req_idx:05d}",
+                            "patient_name": f"Paciente Monitoreo {req_idx}",
+                            "specialty": "UCI Telemetría",
+                            "diagnosis": "Monitoreo hemodinámico continuo en nube.",
+                            "treatment": "Soporte vital estándar.",
+                            "severity_level": "MODERATE",
+                        },
+                    )
+                else:
+                    resp = await client.post(
+                        f"{LB_URL}/api/v1/telemetry",
+                        headers={
+                            "Authorization": f"Bearer {iot_token}",
+                            "X-LB-Algorithm": algorithm_mode,
+                            "X-Client-ID": f"bench-{algorithm_mode}-{req_idx % 10}",
+                        },
+                        json={
+                            "device_id": f"UCI-MON-{req_idx % 16:02d}",
+                            "national_id": f"1000{req_idx:05d}",
+                            "heart_rate_bpm": 75 + (req_idx % 55),
+                            "spo2_percent": round(98.5 - (req_idx % 9), 1),
+                            "systolic_bp": 118 + (req_idx % 45),
+                            "diastolic_bp": 76 + (req_idx % 20),
+                            "temperature_c": round(36.6 + ((req_idx % 5) * 0.4), 1),
+                            "compute_complexity": comp,
+                        },
+                    )
+                elapsed_ms = (time.perf_counter() - t0) * 1000.0
+                assert resp.status_code in (200, 201)
+                served_node = resp.headers.get("X-LB-Selected-Node", "node-1")
+                node_counts[served_node] = node_counts.get(served_node, 0) + 1
+                latencies_ms.append(elapsed_ms)
+                phase_lats.append(elapsed_ms)
+
+        phase_start = time.perf_counter()
+        tasks = [asyncio.create_task(_worker(i, phase["complexity"])) for i in range(phase["requests"])]
+        await asyncio.sleep(0.06)
+        mid_status = (await client.get(f"{LB_URL}/lb/status")).json()
+        await asyncio.gather(*tasks)
+        phase_duration = time.perf_counter() - phase_start
+
+        status_resp = await client.get(f"{LB_URL}/lb/status")
+        lb_state = status_resp.json()
+        if phase["concurrency"] >= 5:
+            active_nodes_now = max(
+                sum(1 for n in mid_status["nodes"] if n["active_in_pool"]),
+                sum(1 for n in lb_state["nodes"] if n["active_in_pool"]),
+            )
+        else:
+            active_nodes_now = sum(1 for n in lb_state["nodes"] if n["active_in_pool"])
+
+        phase_metrics.append(
+            {
+                "phase": phase["name"],
+                "requests": phase["requests"],
+                "concurrency": phase["concurrency"],
+                "mean_latency_ms": round(statistics.mean(phase_lats), 2),
+                "p95_latency_ms": round(sorted(phase_lats)[int(len(phase_lats) * 0.95) - 1], 2),
+                "throughput_rps": round(phase["requests"] / max(0.01, phase_duration), 2),
+                "active_nodes": active_nodes_now,
+            }
+        )
+        timeline_series.append(
+            {
+                "elapsed_sec": round(time.perf_counter() - t_zero, 2),
+                "phase": phase["name"],
+                "mean_latency_ms": round(statistics.mean(phase_lats), 2),
+                "active_nodes": active_nodes_now,
+                "concurrency": phase["concurrency"],
+            }
+        )
+
+        # En la última fase verificamos el estado tras el enfriamiento
+        if "Recuperación" in phase["name"] and algorithm_mode == "rajammal_dynamic":
+            await client.get(f"{LB_URL}/lb/status")
+
+    total_duration = sum(p["requests"] / p["throughput_rps"] for p in phase_metrics)
+    sorted_lats = sorted(latencies_ms)
+    final_status = (await client.get(f"{LB_URL}/lb/status")).json()
+
+    return {
+        "algorithm_mode": algorithm_mode,
+        "total_requests": len(latencies_ms),
+        "total_duration_sec": round(total_duration, 2),
+        "throughput_rps": round(len(latencies_ms) / max(0.01, total_duration), 2),
+        "mean_latency_ms": round(statistics.mean(latencies_ms), 2),
+        "median_p50_ms": round(statistics.median(latencies_ms), 2),
+        "p95_latency_ms": round(sorted_lats[int(len(sorted_lats) * 0.95) - 1], 2),
+        "p99_latency_ms": round(sorted_lats[int(len(sorted_lats) * 0.99) - 1], 2),
+        "stdev_latency_ms": round(statistics.stdev(latencies_ms), 2),
+        "node_distribution": node_counts,
+        "phases": phase_metrics,
+        "timeline": timeline_series,
+        "scaling_events": final_status.get("scaling_events", []),
+    }
+
+
+def generate_charts(
