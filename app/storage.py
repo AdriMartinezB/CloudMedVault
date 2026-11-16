@@ -190,3 +190,89 @@ class CloudStorageManager:
                 verified_count += 1
             return {
                 "intact": True,
+                "verified_records": verified_count,
+                "latest_hash": expected_prev,
+            }
+        finally:
+            conn.close()
+
+    def create_clinical_record(
+        self,
+        national_id: str,
+        patient_name: str,
+        specialty: str,
+        diagnosis: str,
+        treatment: str,
+        severity_level: str,
+        vital_notes: Dict[str, Any],
+        actor: str,
+        role: str,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """Guarda una historia clínica cifrada con AES-256-GCM y pseudonimiza la cédula del paciente."""
+        record_id = f"REC-{uuid.uuid4().hex[:10].upper()}"
+        patient_pseudonym = pseudonymize_pii(national_id)
+        sensitive_body = {
+            "patient_name": patient_name,
+            "national_id_masked": f"***{national_id[-4:]}" if len(national_id) >= 4 else "****",
+            "diagnosis": diagnosis,
+            "treatment": treatment,
+            "vital_notes": vital_notes,
+        }
+        encrypted_str = self.record_vault.encrypt_json(sensitive_body, aad_str=record_id)
+        envelope = json.loads(encrypted_str)
+        created_at = time.time()
+
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO clinical_records
+                    (record_id, patient_pseudonym, specialty, severity_level, encrypted_payload,
+                     payload_sha256, created_by, processed_by_node, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record_id,
+                        patient_pseudonym,
+                        specialty,
+                        severity_level,
+                        encrypted_str,
+                        envelope["sha256_integrity"],
+                        actor,
+                        node_id,
+                        created_at,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        audit = self.append_audit_log(actor, role, "CREATE_CLINICAL_RECORD", record_id, node_id)
+        return {
+            "record_id": record_id,
+            "patient_pseudonym": patient_pseudonym,
+            "specialty": specialty,
+            "severity_level": severity_level,
+            "encryption": "AES-256-GCM (AWS KMS Envelope)",
+            "sha256_integrity": envelope["sha256_integrity"],
+            "processed_by_node": node_id,
+            "audit_event_id": audit["event_id"],
+            "created_at": created_at,
+        }
+
+    def get_clinical_record(
+        self, record_id: str, actor: str, role: str, node_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Recupera y descifra una historia clínica verificando su firma de integridad."""
+        conn = self._get_conn()
+        try:
+            row = conn.execute(
+                "SELECT * FROM clinical_records WHERE record_id = ?", (record_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if not row:
+            self.append_audit_log(actor, role, "READ_CLINICAL_RECORD_NOT_FOUND", record_id, node_id, "NOT_FOUND")
