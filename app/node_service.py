@@ -217,3 +217,83 @@ async def login_for_access_token(body: AuthRequest) -> Dict[str, Any]:
         storage.append_audit_log(body.username, "unauthenticated", "AUTH_LOGIN_FAILED", "iam", NODE_ID, "FAILED")
         raise HTTPException(status_code=401, detail="Credenciales inválidas.")
     storage.append_audit_log(body.username, token_data["role"], "AUTH_LOGIN_SUCCESS", "iam", NODE_ID, "SUCCESS")
+    token_data["issued_by_node"] = NODE_ID
+    return token_data
+
+
+@app.post("/api/v1/records", status_code=201)
+async def create_record(
+    payload: ClinicalRecordCreate,
+    claims: Dict[str, Any] = Depends(require_permission("records:write")),
+) -> Dict[str, Any]:
+    # Inspección WAF del diagnóstico y tratamiento
+    safe, threat = inspect_payload_waf(f"{payload.diagnosis} {payload.treatment} {payload.patient_name}")
+    if not safe:
+        storage.append_audit_log(
+            claims["sub"], claims["role"], f"WAF_BLOCK_{threat}", "records", NODE_ID, "BLOCKED"
+        )
+        raise HTTPException(status_code=403, detail=f"Carga útil bloqueada por regla WAF: {threat}")
+
+    # Simulación realista de procesamiento criptográfico / validación acorde a la capacidad del nodo
+    compute_delay = (0.012 / max(0.4, NODE_CAPACITY)) + (telemetry_state.active_requests * 0.003)
+    await asyncio.sleep(min(0.15, compute_delay))
+
+    return storage.create_clinical_record(
+        national_id=payload.national_id,
+        patient_name=payload.patient_name,
+        specialty=payload.specialty,
+        diagnosis=payload.diagnosis,
+        treatment=payload.treatment,
+        severity_level=payload.severity_level,
+        vital_notes=payload.vital_notes,
+        actor=claims["sub"],
+        role=claims["role"],
+        node_id=NODE_ID,
+    )
+
+
+@app.get("/api/v1/records/{record_id}")
+async def read_record(
+    record_id: str,
+    claims: Dict[str, Any] = Depends(require_permission("records:read")),
+) -> Dict[str, Any]:
+    compute_delay = 0.008 / max(0.4, NODE_CAPACITY)
+    await asyncio.sleep(min(0.10, compute_delay))
+    record = storage.get_clinical_record(
+        record_id=record_id,
+        actor=claims["sub"],
+        role=claims["role"],
+        node_id=NODE_ID,
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Historia clínica no encontrada.")
+    return record
+
+
+@app.post("/api/v1/documents", status_code=201)
+async def upload_document(
+    payload: S3DocumentUpload,
+    claims: Dict[str, Any] = Depends(require_permission("documents:write")),
+) -> Dict[str, Any]:
+    try:
+        raw_bytes = base64.b64decode(payload.content_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Contenido Base64 inválido.")
+
+    compute_delay = 0.014 / max(0.4, NODE_CAPACITY)
+    await asyncio.sleep(min(0.12, compute_delay))
+
+    return storage.put_s3_encrypted_object(
+        record_id=payload.record_id,
+        filename=payload.filename,
+        content_type=payload.content_type,
+        raw_bytes=raw_bytes,
+        actor=claims["sub"],
+        role=claims["role"],
+        node_id=NODE_ID,
+    )
+
+
+@app.get("/api/v1/documents")
+async def download_document(
+    object_key: str = Query(..., description="Clave S3 del objeto cifrado"),
