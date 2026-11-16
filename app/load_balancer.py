@@ -453,3 +453,75 @@ async def lb_history() -> Dict[str, Any]:
         "scaling_events": controller.scaling_events,
     }
 
+
+@app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_to_compute_cluster(full_path: str, request: Request) -> Response:
+    """
+    Enruta dinámicamente las peticiones de negocio hacia el nodo óptimo del clúster
+    según el modelo adaptativo de Rajammal et al. (2025).
+    """
+    client_key = request.headers.get("X-Client-ID") or (
+        request.client.host if request.client else "127.0.0.1"
+    )
+    if not controller.check_rate_limit(client_key):
+        return JSONResponse(
+            status_code=429,
+            content={
+                "detail": "Rate Limit excedido (Protección Anti-DDoS / Fuerza Bruta MinTIC 2021).",
+                "client_id": client_key,
+            },
+            headers={"Retry-After": "5"},
+        )
+
+    override_algo = request.headers.get("X-LB-Algorithm")
+    target_node = controller.select_optimal_node(override_mode=override_algo)
+
+    target_url = f"{target_node.url}/api/{full_path}"
+    if request.url.query:
+        target_url = f"{target_url}?{request.url.query}"
+
+    raw_body = await request.body()
+    forward_headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "content-length")
+    }
+
+    start_ns = time.perf_counter_ns()
+    target_node.in_flight_local += 1
+    target_node.routed_requests += 1
+
+    try:
+        assert http_client is not None
+        backend_resp = await http_client.request(
+            method=request.method,
+            url=target_url,
+            content=raw_body,
+            headers=forward_headers,
+        )
+        elapsed_ms = (time.perf_counter_ns() - start_ns) / 1_000_000.0
+        target_node.ema_latency_ms = (0.3 * elapsed_ms) + (0.7 * target_node.ema_latency_ms)
+        target_node.compute_rajammal_load_and_fitness()
+
+        resp_headers = dict(backend_resp.headers)
+        resp_headers["X-LB-Algorithm-Used"] = override_algo or controller.algorithm_mode
+        resp_headers["X-LB-Selected-Node"] = target_node.node_id
+        resp_headers["X-LB-Node-Fitness"] = str(target_node.last_fitness_score)
+        resp_headers["X-LB-Node-LoadIndex"] = str(target_node.last_load_index)
+        resp_headers["X-LB-Latency-Ms"] = f"{elapsed_ms:.2f}"
+
+        return Response(
+            content=backend_resp.content,
+            status_code=backend_resp.status_code,
+            headers=resp_headers,
+            media_type=backend_resp.headers.get("content-type", "application/json"),
+        )
+    except Exception as exc:
+        target_node.failed_requests += 1
+        target_node.healthy = False
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"Error de comunicación con el nodo {target_node.node_id}: {exc}"},
+        )
+    finally:
+        target_node.in_flight_local = max(0, target_node.in_flight_local - 1)
