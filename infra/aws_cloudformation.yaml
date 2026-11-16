@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudMedVault - Arquitectura de Referencia en AWS con cumplimiento MinTIC (2021) MSPI
+  y Balanceo de Carga Dinámico Elástico (Rajammal et al., 2025).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: production-mintic
+
+Resources:
+  # 1. Cifrado Gestión de Claves (AWS KMS - Cumplimiento MinTIC 2021 Cifrado en Reposo)
+  CloudMedMasterKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Clave maestra CMK FIPS 140-3 para cifrado AES-256 de RDS, S3 y Logs CloudWatch
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableIAMUserPermissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+
+  # 2. Almacenamiento de Objetos Clínicos (Amazon S3 con SSE-KMS y Bloqueo de Acceso Público)
+  ClinicalDocumentsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub cloudmedvault-clinical-docs-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt CloudMedMasterKMSKey.Arn
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # 3. Base de Datos Relacional Multi-AZ Cifrada (Amazon RDS PostgreSQL)
+  ClinicalDatabaseRDS:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      EngineVersion: '16.3'
+      DBInstanceClass: db.m6i.large
+      AllocatedStorage: 100
+      MultiAZ: true
+      StorageEncrypted: true
+      KmsKeyId: !GetAtt CloudMedMasterKMSKey.Arn
+      BackupRetentionPeriod: 30
+      DeletionProtection: true
+      PubliclyAccessible: false
+
+  # 4. Clúster de Cómputo Elástico sin Servidor (AWS ECS Fargate)
+  CloudMedECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-cloudmed-cluster
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # 5. Política de Auto-Scaling Dinámico Basada en Métricas Compuestas (Rajammal et al., 2025)
+  DynamicAutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 12
+      MinCapacity: 3
+      ResourceId: service/production-mintic-cloudmed-cluster/cloudmed-node-service
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
