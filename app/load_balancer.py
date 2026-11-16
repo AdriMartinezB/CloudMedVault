@@ -220,3 +220,104 @@ class DynamicLoadBalancerController:
                     "total_in_flight": total_in_flight,
                     "reason": f"Concurrencia reducida a {total_in_flight} <= 2 (Liberación de nodo elástico para ahorro de costos)",
                 }
+            )
+
+    def select_optimal_node(self, override_mode: Optional[str] = None) -> BackendNodeDescriptor:
+        """
+        Selecciona el nodo óptimo según el algoritmo configurado:
+        - 'rajammal_dynamic': selecciona el nodo con mayor puntuación de aptitud F_i(t).
+        - 'round_robin': turno circular estático sin considerar capacidad ni carga actual.
+        """
+        self.evaluate_auto_scaling()
+        mode = override_mode or self.algorithm_mode
+
+        if mode == "round_robin":
+            # En Round-Robin estático se usan los 3 nodos base sin auto-scaling ni pesos de capacidad
+            candidates = [n for n in self.nodes if not n.is_elastic_standby and n.healthy]
+            if not candidates:
+                candidates = self.nodes
+            chosen = candidates[self._rr_index % len(candidates)]
+            self._rr_index += 1
+            return chosen
+
+        # Modo Rajammal et al. (2025): selección dinámica multicriterio consciente de QoS
+        candidates = [n for n in self.nodes if n.active_in_pool and n.healthy]
+        if not candidates:
+            candidates = [n for n in self.nodes if n.healthy] or self.nodes
+
+        best_node = max(
+            candidates,
+            key=lambda n: (n.compute_rajammal_load_and_fitness(), -n.in_flight_local, -n.routed_requests),
+        )
+        return best_node
+
+    async def poll_nodes_metrics(self, client: httpx.AsyncClient) -> None:
+        """Sondea periódicamente el endpoint /metrics de cada nodo para actualizar CPU, RAM y latencia."""
+        for node in self.nodes:
+            try:
+                resp = await client.get(f"{node.url}/metrics", timeout=1.5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    node.healthy = True
+                    node.cpu_utilization = float(data.get("cpu_utilization", 0.1))
+                    node.mem_utilization = float(data.get("mem_utilization", 0.2))
+                    node.remote_active_requests = int(data.get("active_requests", 0))
+                    # Combina EMA remota y local
+                    remote_ema = float(data.get("ema_latency_ms", 10.0))
+                    node.ema_latency_ms = 0.5 * node.ema_latency_ms + 0.5 * remote_ema
+                    node.compute_rajammal_load_and_fitness()
+                else:
+                    node.healthy = False
+            except Exception:
+                node.healthy = False
+
+        # Guarda instantánea histórica para monitoreo
+        snapshot = {
+            "timestamp": round(time.time(), 2),
+            "active_nodes_count": sum(1 for n in self.nodes if n.active_in_pool and n.healthy),
+            "total_in_flight": sum(n.in_flight_local for n in self.nodes),
+            "nodes": {
+                n.node_id: {
+                    "cpu": round(n.cpu_utilization, 3),
+                    "load_index": n.last_load_index,
+                    "fitness": n.last_fitness_score,
+                    "routed": n.routed_requests,
+                    "ema_ms": round(n.ema_latency_ms, 2),
+                    "active": n.active_in_pool,
+                }
+                for n in self.nodes
+            },
+        }
+        self.telemetry_history.append(snapshot)
+        if len(self.telemetry_history) > 300:
+            self.telemetry_history.pop(0)
+
+
+controller = DynamicLoadBalancerController()
+http_client: Optional[httpx.AsyncClient] = None
+poller_task: Optional[asyncio.Task] = None
+
+
+async def _background_poller() -> None:
+    while True:
+        if http_client is not None:
+            await controller.poll_nodes_metrics(http_client)
+        await asyncio.sleep(0.35)
+
+
+app = FastAPI(
+    title="CloudMedVault - Dynamic Cloud Load Balancer & API Gateway",
+    version="1.0.0",
+    description="Balanceador de carga dinámico adaptativo (Rajammal et al., 2025) y Gateway de Seguridad MinTIC (2021).",
+)
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    global http_client, poller_task
+    http_client = httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=100, max_connections=200),
+        timeout=15.0,
+    )
+    poller_task = asyncio.create_task(_background_poller())
+
