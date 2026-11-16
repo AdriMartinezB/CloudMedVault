@@ -20,7 +20,4 @@ Implementación funcional de una aplicación en la nube (**CloudMedVault**: Gest
 ```bash
 # 1. Ejecutar las pruebas de seguridad, el clúster de 4 nodos y el benchmark comparativo
 .venv/bin/python3 tests/run_cloud_tests_and_benchmarks.py
-
-# 2. Generar el Informe PDF y la Presentación (PPTX y PDF)
-.venv/bin/python3 scripts/generate_deliverables.py
 ```
