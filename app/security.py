@@ -113,3 +113,66 @@ def hash_password(password: str, salt: Optional[bytes] = None) -> str:
     dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
     return f"pbkdf2_sha256$100000${base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}"
 
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verifica una contraseña contra su hash PBKDF2-HMAC-SHA256 en tiempo constante."""
+    try:
+        _, iterations_str, salt_b64, dk_b64 = stored_hash.split("$")
+        salt = base64.b64decode(salt_b64)
+        expected_dk = base64.b64decode(dk_b64)
+        computed_dk = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, int(iterations_str)
+        )
+        return hmac.compare_digest(expected_dk, computed_dk)
+    except Exception:
+        return False
+
+
+# Usuarios preconfigurados con control de acceso basado en roles (RBAC)
+USERS_DB: Dict[str, Dict[str, Any]] = {
+    "dr.ramirez": {
+        "password_hash": hash_password("MedCloud#2026!"),
+        "role": "medico",
+        "full_name": "Dr. Carlos Ramírez (Cardiología)",
+        "permissions": ["records:read", "records:write", "documents:read", "documents:write", "telemetry:read"],
+    },
+    "admin.seguridad": {
+        "password_hash": hash_password("AdminMinTIC#2026!"),
+        "role": "admin",
+        "full_name": "Ing. Laura Gómez (Oficial de Seguridad MSPI)",
+        "permissions": [
+            "records:read",
+            "records:write",
+            "documents:read",
+            "documents:write",
+            "telemetry:read",
+            "telemetry:write",
+            "audit:verify",
+        ],
+    },
+    "gateway.iot": {
+        "password_hash": hash_password("IoTGateway#2026!"),
+        "role": "iot_sensor",
+        "full_name": "Concentrador UCI Telemetría Biomédica",
+        "permissions": ["telemetry:write"],
+    },
+}
+
+
+def authenticate_and_issue_jwt(username: str, password: str) -> Optional[Dict[str, Any]]:
+    """Autentica credenciales de usuario y emite un token JWT firmado (HS256)."""
+    user = USERS_DB.get(username)
+    if not user or not verify_password(password, user["password_hash"]):
+        return None
+    now = int(time.time())
+    payload = {
+        "sub": username,
+        "role": user["role"],
+        "name": user["full_name"],
+        "permissions": user["permissions"],
+        "iat": now,
+        "exp": now + JWT_EXPIRATION_SECONDS,
+        "iss": "CloudMedVault-IAM-MinTIC",
+    }
+    token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return {
