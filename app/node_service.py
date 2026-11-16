@@ -297,3 +297,63 @@ async def upload_document(
 @app.get("/api/v1/documents")
 async def download_document(
     object_key: str = Query(..., description="Clave S3 del objeto cifrado"),
+    claims: Dict[str, Any] = Depends(require_permission("documents:read")),
+) -> Dict[str, Any]:
+    obj = storage.get_s3_encrypted_object(
+        object_key=object_key,
+        actor=claims["sub"],
+        role=claims["role"],
+        node_id=NODE_ID,
+    )
+    if not obj:
+        raise HTTPException(status_code=404, detail="Objeto S3 no encontrado.")
+    return obj
+
+
+@app.post("/api/v1/telemetry", status_code=201)
+async def ingest_telemetry(
+    payload: IoTTelemetryPayload,
+    claims: Dict[str, Any] = Depends(require_permission("telemetry:write")),
+) -> Dict[str, Any]:
+    # Trabajo computacional proporcional a la complejidad del análisis de señal biomédica
+    # e inversamente proporcional a la capacidad de cómputo del nodo (NODE_CAPACITY).
+    work_factor = (payload.compute_complexity * 0.006) / max(0.4, NODE_CAPACITY)
+    overload_penalty = (telemetry_state.active_requests * 0.004) / max(0.4, NODE_CAPACITY)
+    telemetry_state.synthetic_cpu_pressure = min(0.55, payload.compute_complexity * 0.04)
+    try:
+        # Pequeño cálculo hash CPU-bound + espera asíncrona de E/S
+        digest = hashlib.sha256(f"{payload.device_id}:{payload.heart_rate_bpm}".encode()).digest()
+        for _ in range(payload.compute_complexity * 150):
+            digest = hashlib.sha256(digest).digest()
+        await asyncio.sleep(min(0.25, work_factor + overload_penalty))
+    finally:
+        telemetry_state.synthetic_cpu_pressure = max(0.0, telemetry_state.synthetic_cpu_pressure - 0.02)
+
+    return storage.ingest_iot_telemetry(
+        device_id=payload.device_id,
+        national_id=payload.national_id,
+        heart_rate_bpm=payload.heart_rate_bpm,
+        spo2_percent=payload.spo2_percent,
+        systolic_bp=payload.systolic_bp,
+        diastolic_bp=payload.diastolic_bp,
+        temperature_c=payload.temperature_c,
+        node_id=NODE_ID,
+    )
+
+
+@app.get("/api/v1/audit/verify")
+async def verify_audit(
+    claims: Dict[str, Any] = Depends(require_permission("audit:verify")),
+) -> Dict[str, Any]:
+    result = storage.verify_audit_chain()
+    result["verified_by_node"] = NODE_ID
+    return result
+
+
+@app.get("/api/v1/storage/summary")
+async def storage_summary(
+    claims: Dict[str, Any] = Depends(require_permission("records:read")),
+) -> Dict[str, Any]:
+    summary = storage.get_storage_summary()
+    summary["queried_from_node"] = NODE_ID
+    return summary
