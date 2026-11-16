@@ -188,3 +188,32 @@ def require_permission(permission: str):
             return verify_jwt_token(token, required_permission=permission)
         except PermissionError as exc:
             storage.append_audit_log("jwt_user", "restricted", f"RBAC_DENIED:{permission}", "api", NODE_ID, "DENIED")
+            raise HTTPException(status_code=403, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail=f"Token JWT inválido o expirado: {exc}")
+
+    return _verifier
+
+
+@app.get("/health")
+async def health_check() -> Dict[str, Any]:
+    return {
+        "status": "HEALTHY",
+        "node_id": NODE_ID,
+        "availability_zone": NODE_AZ,
+        "capacity_weight": NODE_CAPACITY,
+    }
+
+
+@app.get("/metrics")
+async def node_metrics() -> Dict[str, Any]:
+    return telemetry_state.snapshot()
+
+
+@app.post("/api/v1/auth/token")
+async def login_for_access_token(body: AuthRequest) -> Dict[str, Any]:
+    token_data = authenticate_and_issue_jwt(body.username, body.password)
+    if not token_data:
+        storage.append_audit_log(body.username, "unauthenticated", "AUTH_LOGIN_FAILED", "iam", NODE_ID, "FAILED")
+        raise HTTPException(status_code=401, detail="Credenciales inválidas.")
+    storage.append_audit_log(body.username, token_data["role"], "AUTH_LOGIN_SUCCESS", "iam", NODE_ID, "SUCCESS")
