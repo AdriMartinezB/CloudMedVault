@@ -276,3 +276,78 @@ class CloudStorageManager:
 
         if not row:
             self.append_audit_log(actor, role, "READ_CLINICAL_RECORD_NOT_FOUND", record_id, node_id, "NOT_FOUND")
+            return None
+
+        decrypted_body = self.record_vault.decrypt_json(row["encrypted_payload"], aad_str=record_id)
+        audit = self.append_audit_log(actor, role, "READ_CLINICAL_RECORD", record_id, node_id)
+        return {
+            "record_id": row["record_id"],
+            "patient_pseudonym": row["patient_pseudonym"],
+            "specialty": row["specialty"],
+            "severity_level": row["severity_level"],
+            "clinical_data": decrypted_body,
+            "sha256_integrity_verified": True,
+            "created_by": row["created_by"],
+            "originally_processed_by": row["processed_by_node"],
+            "served_by_node": node_id,
+            "audit_event_id": audit["event_id"],
+            "created_at": row["created_at"],
+        }
+
+    def put_s3_encrypted_object(
+        self,
+        record_id: str,
+        filename: str,
+        content_type: str,
+        raw_bytes: bytes,
+        actor: str,
+        role: str,
+        node_id: str,
+    ) -> Dict[str, Any]:
+        """Almacena un objeto clínico en el bucket S3 simulado con cifrado del lado del servidor (SSE-KMS)."""
+        object_key = f"s3://{record_id}/{uuid.uuid4().hex[:8]}_{filename}"
+        envelope = self.s3_vault.encrypt_bytes(raw_bytes, associated_data=object_key.encode("utf-8"))
+        file_id = hashlib.sha256(object_key.encode("utf-8")).hexdigest()[:20]
+        storage_file = self.s3_dir / f"{file_id}.s3enc"
+        storage_file.write_text(json.dumps(envelope, indent=2), encoding="utf-8")
+        created_at = time.time()
+
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO s3_objects_metadata
+                    (object_key, record_id, filename, content_type, size_bytes,
+                     sha256_plaintext, storage_path, uploaded_by, processed_by_node, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        object_key,
+                        record_id,
+                        filename,
+                        content_type,
+                        len(raw_bytes),
+                        envelope["sha256_integrity"],
+                        str(storage_file),
+                        actor,
+                        node_id,
+                        created_at,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        audit = self.append_audit_log(actor, role, "S3_PUT_ENCRYPTED_OBJECT", object_key, node_id)
+        return {
+            "object_key": object_key,
+            "record_id": record_id,
+            "filename": filename,
+            "size_bytes": len(raw_bytes),
+            "sse_algorithm": "AES-256-GCM (SSE-KMS)",
+            "sha256_plaintext": envelope["sha256_integrity"],
+            "processed_by_node": node_id,
+            "audit_event_id": audit["event_id"],
+        }
+
