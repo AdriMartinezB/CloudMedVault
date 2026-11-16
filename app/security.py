@@ -176,3 +176,43 @@ def authenticate_and_issue_jwt(username: str, password: str) -> Optional[Dict[st
     }
     token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return {
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_in": JWT_EXPIRATION_SECONDS,
+        "role": user["role"],
+        "permissions": user["permissions"],
+    }
+
+
+def verify_jwt_token(token: str, required_permission: Optional[str] = None) -> Dict[str, Any]:
+    """Valida firma, expiración y permisos RBAC de un token JWT."""
+    payload = jwt.decode(
+        token,
+        JWT_SECRET_KEY,
+        algorithms=[JWT_ALGORITHM],
+        issuer="CloudMedVault-IAM-MinTIC",
+    )
+    if required_permission and required_permission not in payload.get("permissions", []):
+        raise PermissionError(
+            f"Acceso denegado (RBAC): el rol '{payload.get('role')}' no posee el permiso '{required_permission}'."
+        )
+    return payload
+
+
+# Patrones WAF para prevención de inyección SQL, XSS y Path Traversal (OWASP Top 10 / MinTIC)
+WAF_BLOCK_PATTERNS: List[Tuple[str, re.Pattern]] = [
+    ("SQL_INJECTION", re.compile(r"(?i)(\bUNION\s+SELECT\b|\bDROP\s+TABLE\b|\bOR\s+1\s*=\s*1\b|--\s*$|;\s*DELETE\s+FROM)")),
+    ("XSS_ATTACK", re.compile(r"(?i)(<\s*script\b|javascript\s*:|onerror\s*=|onload\s*=)")),
+    ("PATH_TRAVERSAL", re.compile(r"(\.\./\.\./|/etc/passwd|c:\\windows\\system32)", re.IGNORECASE)),
+]
+
+
+def inspect_payload_waf(content: str) -> Tuple[bool, Optional[str]]:
+    """
+    Inspecciona una carga útil entrante frente a reglas WAF.
+    Retorna (es_seguro, amenaza_detectada).
+    """
+    for rule_name, pattern in WAF_BLOCK_PATTERNS:
+        if pattern.search(content):
+            return False, rule_name
+    return True, None
