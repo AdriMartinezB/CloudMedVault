@@ -123,3 +123,68 @@ class IoTTelemetryPayload(BaseModel):
     compute_complexity: int = Field(default=1, ge=1, le=10)
 
 
+import urllib.parse
+
+@app.middleware("http")
+async def security_and_metrics_middleware(request: Request, call_next):
+    """
+    Middleware que aplica cabeceras de seguridad MinTIC (2021),
+    inspección WAF y contabilización de métricas QoS en tiempo real.
+    """
+    start_ns = time.perf_counter_ns()
+    is_probe = request.url.path in ("/health", "/metrics")
+    if not is_probe:
+        telemetry_state.record_start()
+
+    is_err = False
+    try:
+        # Inspección rápida WAF en query string (decodificando URL encoding)
+        raw_query = urllib.parse.unquote(str(request.url.query))
+        safe, rule = inspect_payload_waf(raw_query)
+        if not safe:
+            is_err = True
+            storage.append_audit_log(
+                "anonymous", "unknown", f"WAF_BLOCK_{rule}", str(request.url.path), NODE_ID, "BLOCKED"
+            )
+            return Response(
+                content=f'{{"detail":"Bloqueado por WAF MinTIC: regla {rule}"}}',
+                status_code=403,
+                media_type="application/json",
+            )
+
+        response: Response = await call_next(request)
+        if response.status_code >= 500:
+            is_err = True
+
+        # Cabeceras de Seguridad Obligatorias (Guía de Seguridad Web / Nube MinTIC 2021)
+        response.headers["X-Served-By-Node"] = NODE_ID
+        response.headers["X-Node-AZ"] = NODE_AZ
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    except Exception:
+        is_err = True
+        raise
+    finally:
+        if not is_probe:
+            elapsed_ms = (time.perf_counter_ns() - start_ns) / 1_000_000.0
+            telemetry_state.record_end(elapsed_ms, is_err)
+
+
+def require_permission(permission: str):
+    """Dependencia FastAPI que valida el token Bearer JWT y el permiso RBAC requerido."""
+
+    async def _verifier(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Token de autenticación Bearer ausente o inválido (MinTIC IAM Control).",
+            )
+        token = authorization.split(" ", 1)[1].strip()
+        try:
+            return verify_jwt_token(token, required_permission=permission)
+        except PermissionError as exc:
+            storage.append_audit_log("jwt_user", "restricted", f"RBAC_DENIED:{permission}", "api", NODE_ID, "DENIED")
