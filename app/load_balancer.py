@@ -106,3 +106,117 @@ class BackendNodeDescriptor:
 
 
 class DynamicLoadBalancerController:
+    """
+    Controlador central de Balanceo de Carga Dinámico, Auto-Scaling y Rate Limiting.
+    """
+
+    def __init__(self) -> None:
+        self.nodes: List[BackendNodeDescriptor] = [
+            BackendNodeDescriptor(
+                node_id="node-1",
+                url=os.environ.get("NODE_1_URL", "http://127.0.0.1:8001"),
+                capacity_weight=1.6,
+                availability_zone="us-east-1a",
+                is_elastic_standby=False,
+            ),
+            BackendNodeDescriptor(
+                node_id="node-2",
+                url=os.environ.get("NODE_2_URL", "http://127.0.0.1:8002"),
+                capacity_weight=1.0,
+                availability_zone="us-east-1b",
+                is_elastic_standby=False,
+            ),
+            BackendNodeDescriptor(
+                node_id="node-3",
+                url=os.environ.get("NODE_3_URL", "http://127.0.0.1:8003"),
+                capacity_weight=0.6,
+                availability_zone="us-east-1c",
+                is_elastic_standby=False,
+            ),
+            BackendNodeDescriptor(
+                node_id="node-4",
+                url=os.environ.get("NODE_4_URL", "http://127.0.0.1:8004"),
+                capacity_weight=1.4,
+                availability_zone="us-east-1a",
+                is_elastic_standby=True,
+            ),
+        ]
+        self.algorithm_mode: str = "rajammal_dynamic"  # o "round_robin"
+        self._rr_index: int = 0
+        self.scaling_events: List[Dict[str, Any]] = []
+        self.telemetry_history: List[Dict[str, Any]] = []
+        self._last_scale_change: float = 0.0
+
+        # Rate Limiter por cliente (ventana deslizante de 5 segundos)
+        self.rate_limit_max_req: int = int(os.environ.get("CLOUDMED_RATE_LIMIT", "250"))
+        self.rate_limit_window_sec: float = 5.0
+        self._client_windows: Dict[str, List[float]] = {}
+        self.rate_limited_count: int = 0
+
+    def check_rate_limit(self, client_key: str) -> bool:
+        """Verifica si el cliente supera el límite de peticiones por ventana (Protección DDoS)."""
+        now = time.time()
+        timestamps = self._client_windows.get(client_key, [])
+        cutoff = now - self.rate_limit_window_sec
+        valid_ts = [t for t in timestamps if t > cutoff]
+        if len(valid_ts) >= self.rate_limit_max_req:
+            self._client_windows[client_key] = valid_ts
+            self.rate_limited_count += 1
+            return False
+        valid_ts.append(now)
+        self._client_windows[client_key] = valid_ts
+        return True
+
+    def evaluate_auto_scaling(self) -> None:
+        """
+        Evalúa la carga promedio del clúster y activa/desactiva el nodo elástico (node-4)
+        para manejar cargas variables eficientemente.
+        """
+        active_nodes = [n for n in self.nodes if n.active_in_pool and n.healthy]
+        if not active_nodes:
+            return
+        for n in active_nodes:
+            n.compute_rajammal_load_and_fitness()
+
+        avg_load = sum(n.last_load_index for n in active_nodes) / len(active_nodes)
+        total_in_flight = sum(n.in_flight_local for n in active_nodes)
+        standby_node = next((n for n in self.nodes if n.is_elastic_standby), None)
+        if not standby_node or not standby_node.healthy:
+            return
+
+        now = time.time()
+        # Scale-Out cuando hay concurrencia activa >= 4 y la carga supera el umbral (o ráfaga >= 6)
+        if (
+            not standby_node.active_in_pool
+            and total_in_flight >= 4
+            and (avg_load >= SCALE_OUT_THRESHOLD or total_in_flight >= 6)
+        ):
+            standby_node.active_in_pool = True
+            self._last_scale_change = now
+            self.scaling_events.append(
+                {
+                    "timestamp": round(now, 3),
+                    "action": "SCALE_OUT",
+                    "node_id": standby_node.node_id,
+                    "cluster_avg_load": round(avg_load, 4),
+                    "total_in_flight": total_in_flight,
+                    "reason": f"Carga media {avg_load:.2f} >= {SCALE_OUT_THRESHOLD} con concurrencia={total_in_flight}",
+                }
+            )
+        # Scale-In cuando la concurrencia desciende de forma sostenida (Fase de Enfriamiento)
+        elif (
+            standby_node.active_in_pool
+            and total_in_flight <= 2
+            and (now - self._last_scale_change) >= 0.35
+        ):
+            standby_node.active_in_pool = False
+            self._last_scale_change = now
+            self.scaling_events.append(
+                {
+                    "timestamp": round(now, 3),
+                    "action": "SCALE_IN",
+                    "node_id": standby_node.node_id,
+                    "cluster_avg_load": round(avg_load, 4),
+                    "total_in_flight": total_in_flight,
+                    "reason": f"Concurrencia reducida a {total_in_flight} <= 2 (Liberación de nodo elástico para ahorro de costos)",
+                }
