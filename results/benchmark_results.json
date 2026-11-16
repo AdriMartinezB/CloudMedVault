@@ -1,0 +1,298 @@
+{
+  "timestamp": "2026-11-16 12:12:23",
+  "security_and_functional_tests": {
+    "total_tests": 7,
+    "passed_tests": 7,
+    "test_cases": [
+      {
+        "id": "SEC-01",
+        "name": "Autenticación OAuth2/JWT y bloqueo de credenciales inválidas",
+        "mintic_control": "MSPI AC-2 / Gestión de Identidades y Acceso (IAM)",
+        "expected": "HTTP 200 (JWT HS256) / HTTP 401 en fallo",
+        "obtained": "Tokens emitidos para 3 roles; intento inválido bloqueado con HTTP 401",
+        "passed": true
+      },
+      {
+        "id": "SEC-02",
+        "name": "Autorización RBAC y Principio de Mínimo Privilegio",
+        "mintic_control": "MSPI AC-3 / Segregación de Funciones",
+        "expected": "HTTP 403 Forbidden para rol iot_sensor en historias clínicas",
+        "obtained": "Acceso bloqueado con HTTP 403: Acceso denegado (RBAC): el rol 'iot_sensor' no posee el permiso 'records:write'.",
+        "passed": true
+      },
+      {
+        "id": "SEC-03",
+        "name": "Cifrado en Reposo AES-256-GCM y Pseudonimización HMAC-SHA256",
+        "mintic_control": "MSPI SC-28 / Ley 1581 de 2012 (Habeas Data)",
+        "expected": "PII pseudonimizado (PID-*) y payload cifrado en DB con verificación SHA-256",
+        "obtained": "ID=PID-d31ce6bc05431297a057fa8e, Cifrado=AES-256-GCM, SHA-256=f48988febecbc3c1...",
+        "passed": true
+      },
+      {
+        "id": "SEC-04",
+        "name": "Almacenamiento de Objetos Cloud (S3 SSE-KMS) con Integridad SHA-256",
+        "mintic_control": "Guía Seguridad Nube MinTIC (2021) - Protección de Almacenamiento",
+        "expected": "Objeto cifrado en disco (.s3enc) y verificado al descargar",
+        "obtained": "Clave s3://REC-F04E174FFB/e22529d5_ecocardiograma_doppler_2026.pdf almacenada y verificada con SSE-KMS (AES-256-GCM)",
+        "passed": true
+      },
+      {
+        "id": "SEC-05",
+        "name": "Firewall de Aplicaciones Web (WAF) contra SQLi y XSS",
+        "mintic_control": "MSPI SI-10 / Protección Perimetral OWASP Top 10",
+        "expected": "Bloqueo inmediato con HTTP 403 Forbidden y registro en auditoría",
+        "obtained": "SQLi bloqueado (HTTP 403) y XSS bloqueado (HTTP 403)",
+        "passed": true
+      },
+      {
+        "id": "SEC-06",
+        "name": "Cadena de Auditoría Inmutable (Hash-Chain SHA-256) y Cabeceras HSTS/CSP",
+        "mintic_control": "MSPI AU-9 / Protección de Información de Auditoría",
+        "expected": "Cadena íntegra (intact=True) y cabeceras HSTS, CSP, X-Frame-Options presentes",
+        "obtained": "11 eventos auditados verificados; Hash=fdb9c25e67e74e8d...",
+        "passed": true
+      },
+      {
+        "id": "SEC-07",
+        "name": "Control de Tráfico y Mitigación DDoS (Rate Limiting por Ventana Deslizante)",
+        "mintic_control": "MSPI SC-5 / Protección contra Denegación de Servicio (DoS)",
+        "expected": "HTTP 429 Too Many Requests al superar umbral por cliente",
+        "obtained": "Ráfaga detectada y bloqueada con HTTP 429 (4 peticiones frenadas)",
+        "passed": true
+      }
+    ]
+  },
+  "benchmarks": {
+    "round_robin": {
+      "algorithm_mode": "round_robin",
+      "total_requests": 120,
+      "total_duration_sec": 1.26,
+      "throughput_rps": 95.42,
+      "mean_latency_ms": 50.92,
+      "median_p50_ms": 39.73,
+      "p95_latency_ms": 108.78,
+      "p99_latency_ms": 116.5,
+      "stdev_latency_ms": 28.19,
+      "node_distribution": {
+        "node-1": 40,
+        "node-2": 40,
+        "node-3": 40,
+        "node-4": 0
+      },
+      "phases": [
+        {
+          "phase": "Fase 1: Carga Baja",
+          "requests": 20,
+          "concurrency": 2,
+          "mean_latency_ms": 28.78,
+          "p95_latency_ms": 39.64,
+          "throughput_rps": 66.78,
+          "active_nodes": 3
+        },
+        {
+          "phase": "Fase 2: Carga Media",
+          "requests": 30,
+          "concurrency": 5,
+          "mean_latency_ms": 45.05,
+          "p95_latency_ms": 76.62,
+          "throughput_rps": 100.44,
+          "active_nodes": 4
+        },
+        {
+          "phase": "Fase 3: Ráfaga Crítica UCI (Pico)",
+          "requests": 50,
+          "concurrency": 12,
+          "mean_latency_ms": 72.13,
+          "p95_latency_ms": 113.06,
+          "throughput_rps": 138.28,
+          "active_nodes": 4
+        },
+        {
+          "phase": "Fase 4: Enfriamiento / Recuperación",
+          "requests": 20,
+          "concurrency": 2,
+          "mean_latency_ms": 28.86,
+          "p95_latency_ms": 38.82,
+          "throughput_rps": 67.14,
+          "active_nodes": 3
+        }
+      ],
+      "timeline": [
+        {
+          "elapsed_sec": 0.3,
+          "phase": "Fase 1: Carga Baja",
+          "mean_latency_ms": 28.78,
+          "active_nodes": 3,
+          "concurrency": 2
+        },
+        {
+          "elapsed_sec": 0.6,
+          "phase": "Fase 2: Carga Media",
+          "mean_latency_ms": 45.05,
+          "active_nodes": 4,
+          "concurrency": 5
+        },
+        {
+          "elapsed_sec": 0.96,
+          "phase": "Fase 3: Ráfaga Crítica UCI (Pico)",
+          "mean_latency_ms": 72.13,
+          "active_nodes": 4,
+          "concurrency": 12
+        },
+        {
+          "elapsed_sec": 1.26,
+          "phase": "Fase 4: Enfriamiento / Recuperación",
+          "mean_latency_ms": 28.86,
+          "active_nodes": 3,
+          "concurrency": 2
+        }
+      ],
+      "scaling_events": [
+        {
+          "timestamp": 1794849140.988,
+          "action": "SCALE_OUT",
+          "node_id": "node-4",
+          "cluster_avg_load": 0.4621,
+          "total_in_flight": 4,
+          "reason": "Carga media 0.46 >= 0.36 con concurrencia=4"
+        },
+        {
+          "timestamp": 1794849141.646,
+          "action": "SCALE_IN",
+          "node_id": "node-4",
+          "cluster_avg_load": 0.8653,
+          "total_in_flight": 0,
+          "reason": "Concurrencia reducida a 0 <= 2 (Liberación de nodo elástico para ahorro de costos)"
+        }
+      ]
+    },
+    "rajammal_dynamic": {
+      "algorithm_mode": "rajammal_dynamic",
+      "total_requests": 120,
+      "total_duration_sec": 1.03,
+      "throughput_rps": 116.09,
+      "mean_latency_ms": 42.97,
+      "median_p50_ms": 35.19,
+      "p95_latency_ms": 91.15,
+      "p99_latency_ms": 101.34,
+      "stdev_latency_ms": 22.55,
+      "node_distribution": {
+        "node-1": 70,
+        "node-2": 17,
+        "node-3": 1,
+        "node-4": 32
+      },
+      "phases": [
+        {
+          "phase": "Fase 1: Carga Baja",
+          "requests": 20,
+          "concurrency": 2,
+          "mean_latency_ms": 22.87,
+          "p95_latency_ms": 30.52,
+          "throughput_rps": 85.37,
+          "active_nodes": 3
+        },
+        {
+          "phase": "Fase 2: Carga Media",
+          "requests": 30,
+          "concurrency": 5,
+          "mean_latency_ms": 36.66,
+          "p95_latency_ms": 48.73,
+          "throughput_rps": 128.05,
+          "active_nodes": 4
+        },
+        {
+          "phase": "Fase 3: Ráfaga Crítica UCI (Pico)",
+          "requests": 50,
+          "concurrency": 12,
+          "mean_latency_ms": 61.11,
+          "p95_latency_ms": 91.79,
+          "throughput_rps": 171.03,
+          "active_nodes": 4
+        },
+        {
+          "phase": "Fase 4: Enfriamiento / Recuperación",
+          "requests": 20,
+          "concurrency": 2,
+          "mean_latency_ms": 27.21,
+          "p95_latency_ms": 33.53,
+          "throughput_rps": 73.31,
+          "active_nodes": 3
+        }
+      ],
+      "timeline": [
+        {
+          "elapsed_sec": 0.24,
+          "phase": "Fase 1: Carga Baja",
+          "mean_latency_ms": 22.87,
+          "active_nodes": 3,
+          "concurrency": 2
+        },
+        {
+          "elapsed_sec": 0.47,
+          "phase": "Fase 2: Carga Media",
+          "mean_latency_ms": 36.66,
+          "active_nodes": 4,
+          "concurrency": 5
+        },
+        {
+          "elapsed_sec": 0.76,
+          "phase": "Fase 3: Ráfaga Crítica UCI (Pico)",
+          "mean_latency_ms": 61.11,
+          "active_nodes": 4,
+          "concurrency": 12
+        },
+        {
+          "elapsed_sec": 1.04,
+          "phase": "Fase 4: Enfriamiento / Recuperación",
+          "mean_latency_ms": 27.21,
+          "active_nodes": 3,
+          "concurrency": 2
+        }
+      ],
+      "scaling_events": [
+        {
+          "timestamp": 1794849142.688,
+          "action": "SCALE_OUT",
+          "node_id": "node-4",
+          "cluster_avg_load": 0.3971,
+          "total_in_flight": 4,
+          "reason": "Carga media 0.40 >= 0.36 con concurrencia=4"
+        },
+        {
+          "timestamp": 1794849143.212,
+          "action": "SCALE_IN",
+          "node_id": "node-4",
+          "cluster_avg_load": 0.4898,
+          "total_in_flight": 0,
+          "reason": "Concurrencia reducida a 0 <= 2 (Liberación de nodo elástico para ahorro de costos)"
+        }
+      ]
+    },
+    "improvements": {
+      "mean_latency_reduction_pct": 15.61,
+      "p95_latency_reduction_pct": 16.21,
+      "throughput_increase_pct": 21.66
+    }
+  },
+  "storage_summary": {
+    "rds_clinical_records": 49,
+    "s3_encrypted_objects": 1,
+    "iot_telemetry_events": 192,
+    "clinical_anomalies_flagged": 54,
+    "immutable_audit_entries": 70,
+    "persistence_by_node": {
+      "node-1": 112,
+      "node-2": 57,
+      "node-3": 41,
+      "node-4": 32
+    },
+    "queried_from_node": "node-1"
+  },
+  "audit_verification": {
+    "intact": true,
+    "verified_records": 70,
+    "latest_hash": "254d8acca66a72f8894ac149f668f304dc12d720f9b88542907a87549ef60bdb",
+    "verified_by_node": "node-1"
+  }
+}
