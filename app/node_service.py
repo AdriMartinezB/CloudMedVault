@@ -174,7 +174,7 @@ async def security_and_metrics_middleware(request: Request, call_next):
             telemetry_state.record_end(elapsed_ms, is_err)
 
 
-def require_permission(permission: str):
+def require_permission(permission: Optional[str] = None):
     """Dependencia FastAPI que valida el token Bearer JWT y el permiso RBAC requerido."""
 
     async def _verifier(authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
@@ -219,6 +219,28 @@ async def login_for_access_token(body: AuthRequest) -> Dict[str, Any]:
     storage.append_audit_log(body.username, token_data["role"], "AUTH_LOGIN_SUCCESS", "iam", NODE_ID, "SUCCESS")
     token_data["issued_by_node"] = NODE_ID
     return token_data
+
+
+@app.get("/api/v1/auth/me")
+async def get_current_user(
+    claims: Dict[str, Any] = Depends(require_permission(None)),
+) -> Dict[str, Any]:
+    return {
+        "username": claims["sub"],
+        "full_name": claims.get("name", claims["sub"]),
+        "role": claims["role"],
+        "permissions": claims.get("permissions", []),
+        "served_by_node": NODE_ID,
+    }
+
+
+@app.get("/api/v1/records")
+async def list_records(
+    limit: int = Query(default=25, ge=1, le=100),
+    claims: Dict[str, Any] = Depends(require_permission("records:read")),
+) -> Dict[str, Any]:
+    items = storage.list_clinical_records(limit=limit)
+    return {"items": items, "count": len(items), "served_by_node": NODE_ID}
 
 
 @app.post("/api/v1/records", status_code=201)
@@ -294,6 +316,15 @@ async def upload_document(
     )
 
 
+@app.get("/api/v1/documents/list")
+async def list_documents(
+    limit: int = Query(default=25, ge=1, le=100),
+    claims: Dict[str, Any] = Depends(require_permission("documents:read")),
+) -> Dict[str, Any]:
+    items = storage.list_s3_objects(limit=limit)
+    return {"items": items, "count": len(items), "served_by_node": NODE_ID}
+
+
 @app.get("/api/v1/documents")
 async def download_document(
     object_key: str = Query(..., description="Clave S3 del objeto cifrado"),
@@ -339,6 +370,24 @@ async def ingest_telemetry(
         temperature_c=payload.temperature_c,
         node_id=NODE_ID,
     )
+
+
+@app.get("/api/v1/telemetry")
+async def list_telemetry(
+    limit: int = Query(default=25, ge=1, le=100),
+    claims: Dict[str, Any] = Depends(require_permission("telemetry:read")),
+) -> Dict[str, Any]:
+    items = storage.list_recent_telemetry(limit=limit)
+    return {"items": items, "count": len(items), "served_by_node": NODE_ID}
+
+
+@app.get("/api/v1/audit/logs")
+async def list_audit_logs(
+    limit: int = Query(default=25, ge=1, le=100),
+    claims: Dict[str, Any] = Depends(require_permission("audit:verify")),
+) -> Dict[str, Any]:
+    items = storage.list_recent_audit_logs(limit=limit)
+    return {"items": items, "count": len(items), "served_by_node": NODE_ID}
 
 
 @app.get("/api/v1/audit/verify")
