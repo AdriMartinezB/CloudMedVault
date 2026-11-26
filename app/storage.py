@@ -485,3 +485,79 @@ class CloudStorageManager:
             }
         finally:
             conn.close()
+
+    def list_clinical_records(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Lista metadatos de historias clínicas (sin exponer el payload cifrado)."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT record_id, patient_pseudonym, specialty, severity_level,
+                       payload_sha256, created_by, processed_by_node, created_at
+                FROM clinical_records
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def list_s3_objects(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Lista metadatos de objetos cifrados almacenados en el bucket S3."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT object_key, record_id, filename, content_type, size_bytes,
+                       sha256_plaintext, uploaded_by, processed_by_node, created_at
+                FROM s3_objects_metadata
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def list_recent_telemetry(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Lista las lecturas más recientes de telemetría biomédica IoT UCI."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT telemetry_id, device_id, patient_pseudonym, heart_rate_bpm,
+                       spo2_percent, systolic_bp, diastolic_bp, temperature_c,
+                       anomaly_detected, risk_score, processed_by_node, created_at
+                FROM iot_telemetry
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [
+                {**dict(r), "anomaly_detected": bool(r["anomaly_detected"])}
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def list_recent_audit_logs(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Lista los eventos más recientes de la cadena de auditoría inmutable."""
+        conn = self._get_conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT seq_id, event_id, timestamp, actor, role, action,
+                       resource_id, node_id, status, prev_hash, entry_hash
+                FROM audit_logs
+                ORDER BY seq_id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
