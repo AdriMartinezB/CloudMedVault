@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CloudMedVault — Portal Cloud Seguro &amp; Balanceador Dinámico</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+  <style>
+    :root {
+      --bg: #0b1220;
+      --surface: #111c30;
+      --surface-alt: #182640;
+      --border: #253655;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-dark: #0284c7;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #a855f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at top right, #162544 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    /* Login View */
+    #login-view {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 480px;
+      background: rgba(17, 28, 48, 0.94);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .brand-header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .brand-logo {
+      width: 54px;
+      height: 54px;
+      margin: 0 auto 0.75rem;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--primary-dark), #2563eb);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: #fff;
+      box-shadow: 0 8px 24px rgba(2, 132, 199, 0.35);
+    }
+
+    .brand-header h1 {
+      font-size: 1.55rem;
+      color: #fff;
+      margin-bottom: 0.25rem;
+    }
+
+    .brand-header p {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      justify-content: center;
+      margin-top: 0.8rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.22rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+
+    .badge-blue { background: rgba(56, 189, 248, 0.14); color: var(--primary); border-color: rgba(56, 189, 248, 0.35); }
+    .badge-green { background: rgba(16, 185, 129, 0.14); color: #34d399; border-color: rgba(16, 185, 129, 0.35); }
+    .badge-amber { background: rgba(245, 158, 11, 0.14); color: #fbbf24; border-color: rgba(245, 158, 11, 0.35); }
+    .badge-red { background: rgba(239, 68, 68, 0.14); color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
+    .badge-purple { background: rgba(168, 85, 247, 0.14); color: #c084fc; border-color: rgba(168, 85, 247, 0.35); }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 0.35rem;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      background: #0b1426;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.92rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+    }
+
+    textarea { min-height: 76px; resize: vertical; font-family: inherit; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.65rem 1.1rem;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-primary { background: linear-gradient(135deg, var(--primary-dark), #2563eb); color: #fff; }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-success { background: #059669; color: #fff; }
+    .btn-success:hover { background: #047857; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .btn-outline:hover { background: var(--surface-alt); border-color: var(--primary); }
+    .btn-sm { padding: 0.38rem 0.72rem; font-size: 0.8rem; }
+    .btn-full { width: 100%; }
+
+    .quick-roles {
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .quick-roles-title {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.6rem;
+      text-align: center;
+    }
+
+    .role-buttons {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+    }
+
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.86rem;
+      margin-bottom: 1rem;
+      border: 1px solid transparent;
+      display: none;
+    }
+
+    .alert.show { display: block; }
+    .alert-error { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.45); color: #fecaca; }
+    .alert-success { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.45); color: #a7f3d0; }
+    .alert-info { background: rgba(56, 189, 248, 0.14); border-color: rgba(56, 189, 248, 0.45); color: #bae6fd; }
+
+    /* Main Portal */
+    #app-view { display: none; min-height: 100vh; }
+
+    .topbar {
+      background: rgba(17, 28, 48, 0.96);
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 1.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(8px);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .topbar-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary-dark), #2563eb);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .topbar-title h2 { font-size: 1.08rem; color: #fff; }
+    .topbar-title span { font-size: 0.76rem; color: var(--muted); }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+    }
+
+    .user-chip {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.4rem 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.83rem;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 1.4rem 1.5rem 3rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.35rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.75rem;
+    }
+
+    .tab-btn {
+      padding: 0.58rem 1rem;
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-size: 0.86rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn:hover { color: #fff; border-color: var(--primary); }
+    .tab-btn.active {
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.35), rgba(37, 99, 235, 0.25));
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }
+
+    .card-header h3 {
+      font-size: 1rem;
+      color: var(--primary);
+    }
+
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+    }
+
+    .kpi-label { font-size: 0.76rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi-value { font-size: 1.55rem; font-weight: 800; color: #fff; margin-top: 0.25rem; }
+    .kpi-sub { font-size: 0.77rem; color: #94a3b8; margin-top: 0.2rem; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { padding: 0.68rem 0.65rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--primary); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:hover td { background: rgba(56, 189, 248, 0.04); }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 0.8rem;
+    }
+
+    .code-box {
+      background: #070d19;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.8rem;
+      color: #a5f3fc;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 290px;
+      overflow-y: auto;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 7px;
+      background: #0b1426;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 0.25rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #38bdf8);
+      border-radius: 999px;
+      transition: width 0.3s ease;
+    }
+
+    .inline-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .muted { color: var(--muted); font-size: 0.83rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <!-- ==================== VISTA DE LOGIN ==================== -->
+  <section id="login-view">
+    <div class="login-card">
+      <div class="brand-header">
+        <div class="brand-logo">CM</div>
+        <h1>CloudMedVault</h1>
+        <p>Plataforma Cloud Segura de Historias Clínicas y Telemetría UCI</p>
+        <div class="badge-row">
+          <span class="badge badge-blue">MinTIC (2021) MSPI</span>
+          <span class="badge badge-green">AES-256-GCM + S3 SSE-KMS</span>
+          <span class="badge badge-purple">Rajammal et al. (2025)</span>
+        </div>
+      </div>
+
+      <div id="login-alert" class="alert"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-username">Usuario IAM</label>
+          <input id="login-username" type="text" placeholder="Ej: dr.ramirez" required autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Contraseña</label>
+          <input id="login-password" type="password" placeholder="••••••••••••" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Iniciar Sesión Segura (JWT HS256)</button>
+      </form>
+
+      <div class="quick-roles">
+        <div class="quick-roles-title">Autocompletar credenciales de prueba (Roles RBAC)</div>
+        <div class="role-buttons">
+          <button type="button" class="btn btn-outline btn-sm" onclick="fillRole('dr.ramirez', 'MedCloud#2026!')">Médico</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="fillRole('admin.seguridad', 'AdminMinTIC#2026!')">Admin MSPI</button>
+          <button type="button" class="btn btn-outline btn-sm" onclick="fillRole('gateway.iot', 'IoTGateway#2026!')">Sensor IoT</button>
+        </div>
+      </div>
+
+      <div style="margin-top: 1.1rem; text-align: center;">
+        <span id="login-cluster-pill" class="badge badge-green">Verificando estado del clúster...</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== PORTAL PRINCIPAL ==================== -->
+  <section id="app-view">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-logo">CM</div>
+        <div class="topbar-title">
+          <h2>CloudMedVault — Consola Cloud Segura</h2>
+          <span>AWS Reference Architecture | MinTIC (2021) MSPI | Balanceo Dinámico Rajammal et al. (2025)</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="user-chip">
+          <span id="nav-user-name" style="font-weight:700;"></span>
+          <span id="nav-user-role" class="badge badge-blue"></span>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="logout()">Cerrar Sesión / Cambiar Rol</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div id="global-alert" class="alert"></div>
+
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="tab-cluster" onclick="switchTab('tab-cluster', this)">Clúster y Balanceo Dinámico</button>
+        <button class="tab-btn" data-tab="tab-records" onclick="switchTab('tab-records', this)">Historias Clínicas (RDS Cifrado)</button>
+        <button class="tab-btn" data-tab="tab-documents" onclick="switchTab('tab-documents', this)">Documentos S3 (SSE-KMS)</button>
+        <button class="tab-btn" data-tab="tab-telemetry" onclick="switchTab('tab-telemetry', this)">Telemetría IoT UCI</button>
+        <button class="tab-btn" data-tab="tab-security" onclick="switchTab('tab-security', this)">Seguridad MinTIC, WAF y Auditoría</button>
+      </nav>
+
+      <!-- ========== TAB 1: CLÚSTER Y BALANCEADOR ========== -->
+      <div id="tab-cluster" class="tab-panel active">
+        <div class="grid-4">
+          <div class="kpi-card">
+            <div class="kpi-label">Algoritmo Activo</div>
+            <div id="kpi-algo" class="kpi-value" style="font-size:1.15rem;color:var(--primary);">rajammal_dynamic</div>
+            <div class="kpi-sub">Pesos: CPU 0.35 · Conn 0.30 · Lat 0.20 · RAM 0.15</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Nodos Activos en Pool</div>
+            <div id="kpi-nodes" class="kpi-value">3 / 4</div>
+            <div id="kpi-nodes-sub" class="kpi-sub">node-4 en Standby Elástico</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Peticiones Enrutadas</div>
+            <div id="kpi-routed" class="kpi-value">0</div>
+            <div id="kpi-rl" class="kpi-sub">Bloqueadas Rate Limit: 0</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Eventos Auto-Scaling</div>
+            <div id="kpi-scaling" class="kpi-value">0</div>
+            <div class="kpi-sub">Scale-Out / Scale-In dinámicos</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Estado en Tiempo Real del Clúster de Cómputo Multi-AZ</h3>
+            <div class="inline-actions">
+              <select id="algo-select" style="width:auto;" onchange="changeAlgorithm(this.value)">
+                <option value="rajammal_dynamic">Rajammal et al. (2025) — Dinámico Multicriterio</option>
+                <option value="round_robin">Round-Robin Estático (Comparativa)</option>
+              </select>
+              <button class="btn btn-primary btn-sm" onclick="runLiveBurst()">Simular Ráfaga UCI (25 req)</button>
+              <button class="btn btn-outline btn-sm" onclick="resetLBStats()">Reiniciar Contadores</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nodo</th>
+                  <th>Zona (AZ)</th>
+                  <th>Capacidad</th>
+                  <th>Estado Pool</th>
+                  <th>CPU</th>
+                  <th>Latencia EMA</th>
+                  <th>Índice Carga L(t)</th>
+                  <th>Aptitud F(t)</th>
+                  <th>Peticiones</th>
+                </tr>
+              </thead>
+              <tbody id="cluster-nodes-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Registro de Eventos de Auto-Scaling Elástico y Sesión JWT</h3>
+          </div>
+          <div id="scaling-events-box" class="code-box">Sin eventos de escalado registrados aún. Haz clic en "Simular Ráfaga UCI (25 req)" para activar node-4 dinámicamente.</div>
+        </div>
+      </div>
+
+      <!-- ========== TAB 2: HISTORIAS CLÍNICAS ========== -->
+      <div id="tab-records" class="tab-panel">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>Registrar Nueva Historia Clínica (Cifrado AES-256-GCM)</h3>
+              <span class="badge badge-blue">Permiso: records:write</span>
+            </div>
+            <form id="record-form">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Cédula / ID Paciente (Se pseudonimiza)</label>
+                  <input id="rec-nid" type="text" value="1098765432" required />
+                </div>
+                <div class="form-group">
+                  <label>Nombre Completo del Paciente</label>
+                  <input id="rec-name" type="text" value="María Fernanda López" required />
+                </div>
+                <div class="form-group">
+                  <label>Especialidad</label>
+                  <input id="rec-spec" type="text" value="Cardiología Clínica" required />
+                </div>
+                <div class="form-group">
+                  <label>Severidad</label>
+                  <select id="rec-sev">
+                    <option value="LOW">LOW</option>
+                    <option value="MODERATE">MODERATE</option>
+                    <option value="HIGH" selected>HIGH</option>
+                    <option value="CRITICAL">CRITICAL</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Diagnóstico Clínico</label>
+                <textarea id="rec-diag" required>Taquicardia supraventricular paroxística controlada bajo monitoreo.</textarea>
+              </div>
+              <div class="form-group">
+                <label>Tratamiento Prescrito</label>
+                <textarea id="rec-treat" required>Metoprolol 50mg cada 12 horas + control electrocardiográfico en 48h.</textarea>
+              </div>
+              <button type="submit" class="btn btn-primary">Guardar Historia Cifrada en RDS</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Visor Descifrado (Verificación SHA-256 + KMS)</h3>
+              <span class="badge badge-green">AES-256-GCM</span>
+            </div>
+            <p class="muted" style="margin-bottom:0.75rem;">
+              Selecciona cualquier historia de la tabla inferior para descifrarla en memoria y registrar el acceso en la cadena de auditoría SHA-256.
+            </p>
+            <div id="record-detail-box" class="code-box">Esperando consulta o creación de historia clínica...</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Historias Clínicas Almacenadas (Metadatos Pseudonimizados)</h3>
+            <button class="btn btn-outline btn-sm" onclick="loadRecords()">Actualizar Lista</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID Registro</th>
+                  <th>Pseudónimo (Ley 1581)</th>
+                  <th>Especialidad</th>
+                  <th>Severidad</th>
+                  <th>Nodo Procesador</th>
+                  <th>Autor</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="records-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== TAB 3: DOCUMENTOS S3 ========== -->
+      <div id="tab-documents" class="tab-panel">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>Subir Documento Clínico a Amazon S3 (SSE-KMS)</h3>
+              <span class="badge badge-purple">Permiso: documents:write</span>
+            </div>
+            <form id="doc-form">
+              <div class="form-group">
+                <label>ID de Historia Clínica Asociada</label>
+                <input id="doc-rec-id" type="text" value="REC-DEMO-001" required />
+              </div>
+              <div class="form-group">
+                <label>Nombre del Archivo</label>
+                <input id="doc-filename" type="text" value="informe_ecocardiograma.txt" required />
+              </div>
+              <div class="form-group">
+                <label>Adjuntar Archivo Local (Opcional) o Usar Texto Inferior</label>
+                <input id="doc-file-input" type="file" />
+              </div>
+              <div class="form-group">
+                <label>Contenido del Informe Clínico (si no adjuntas archivo)</label>
+                <textarea id="doc-text">INFORME DE ECOCARDIOGRAMA DOPPLER — FEVI 62%. Válvulas competentes sin derrame pericárdico.</textarea>
+              </div>
+              <button type="submit" class="btn btn-primary">Cifrar y Subir al Bucket S3</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Resultado de Descifrado e Integridad S3</h3>
+              <span class="badge badge-green">SSE-KMS + SHA-256</span>
+            </div>
+            <div id="doc-detail-box" class="code-box">Sube un documento o haz clic en "Descifrar" en la tabla inferior para verificar su firma SHA-256.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Objetos Cifrados en el Bucket S3</h3>
+            <button class="btn btn-outline btn-sm" onclick="loadDocuments()">Actualizar Bucket</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Clave S3</th>
+                  <th>Archivo</th>
+                  <th>Tamaño</th>
+                  <th>SHA-256</th>
+                  <th>Nodo</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="docs-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== TAB 4: TELEMETRÍA IOT UCI ========== -->
+      <div id="tab-telemetry" class="tab-panel">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>Enviar Lectura de Sensor Biomédico IoT UCI</h3>
+              <div class="inline-actions">
+                <button type="button" class="btn btn-outline btn-sm" onclick="presetTelemetry('normal')">Signos Normales</button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="presetTelemetry('critical')">Alerta Crítica</button>
+              </div>
+            </div>
+            <form id="telemetry-form">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>ID Dispositivo UCI</label>
+                  <input id="tel-dev" type="text" value="UCI-MON-04" required />
+                </div>
+                <div class="form-group">
+                  <label>Cédula Paciente</label>
+                  <input id="tel-nid" type="text" value="1098765432" required />
+                </div>
+                <div class="form-group">
+                  <label>Frecuencia Cardíaca (BPM)</label>
+                  <input id="tel-hr" type="number" value="82" min="20" max="260" required />
+                </div>
+                <div class="form-group">
+                  <label>Saturación SpO2 (%)</label>
+                  <input id="tel-spo2" type="number" step="0.1" value="98.2" min="50" max="100" required />
+                </div>
+                <div class="form-group">
+                  <label>Presión Sistólica (mmHg)</label>
+                  <input id="tel-sys" type="number" value="120" min="40" max="260" required />
+                </div>
+                <div class="form-group">
+                  <label>Presión Diastólica (mmHg)</label>
+                  <input id="tel-dia" type="number" value="78" min="20" max="180" required />
+                </div>
+                <div class="form-group">
+                  <label>Temperatura (°C)</label>
+                  <input id="tel-temp" type="number" step="0.1" value="36.8" min="30" max="44" required />
+                </div>
+                <div class="form-group">
+                  <label>Complejidad Cómputo (1-10)</label>
+                  <input id="tel-comp" type="number" value="3" min="1" max="10" required />
+                </div>
+              </div>
+              <button type="submit" class="btn btn-success">Ingestar Telemetría al Clúster</button>
+              <span class="muted" style="margin-left:0.6rem;">Requiere rol <b>iot_sensor</b> o <b>admin</b></span>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Respuesta de Análisis de Riesgo Clínico</h3>
+            </div>
+            <div id="telemetry-detail-box" class="code-box">Envía una lectura biomédica para ver el cálculo de riesgo, detección de anomalías y nodo asignado por el balanceador.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Últimas Lecturas de Telemetría UCI</h3>
+            <button class="btn btn-outline btn-sm" onclick="loadTelemetry()">Actualizar Telemetría</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID Evento</th>
+                  <th>Dispositivo</th>
+                  <th>Pseudónimo</th>
+                  <th>FC / SpO2 / PA / Temp</th>
+                  <th>Riesgo</th>
+                  <th>Estado</th>
+                  <th>Nodo</th>
+                </tr>
+              </thead>
+              <tbody id="telemetry-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== TAB 5: SEGURIDAD MINTIC, WAF Y AUDITORÍA ========== -->
+      <div id="tab-security" class="tab-panel">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h3>Laboratorio en Vivo: Controles MinTIC (2021) y WAF</h3>
+            </div>
+            <p class="muted" style="margin-bottom:0.85rem;">
+              Ejecuta pruebas reales contra el clúster para validar los controles de seguridad perimetral y de integridad criptográfica.
+            </p>
+            <div class="inline-actions" style="margin-bottom:1rem;">
+              <button class="btn btn-success btn-sm" onclick="verifyAuditChain()">Verificar Cadena SHA-256</button>
+              <button class="btn btn-danger btn-sm" onclick="testWafSqli()">Probar Ataque SQLi (WAF)</button>
+              <button class="btn btn-danger btn-sm" onclick="testWafXss()">Probar Ataque XSS (WAF)</button>
+              <button class="btn btn-primary btn-sm" onclick="loadStorageSummary()">Resumen Almacenamiento</button>
+            </div>
+            <div id="security-lab-box" class="code-box">Haz clic en cualquiera de las pruebas de seguridad superiores para inspeccionar la respuesta HTTP y cabeceras MinTIC.</div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Perfil de Sesión IAM (JWT Activo)</h3>
+            </div>
+            <div id="session-jwt-box" class="code-box"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Cadena de Auditoría Inmutable (Hash-Chain SHA-256 — Solo Admin MSPI)</h3>
+            <button class="btn btn-outline btn-sm" onclick="loadAuditLogs()">Actualizar Auditoría</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Evento</th>
+                  <th>Actor (Rol)</th>
+                  <th>Acción</th>
+                  <th>Recurso</th>
+                  <th>Nodo</th>
+                  <th>Estado</th>
+                  <th>Hash SHA-256</th>
+                </tr>
+              </thead>
+              <tbody id="audit-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </section>
+
+  <script>
+    let authState = null;
+    let pollInterval = null;
+
+    function fillRole(user, pass) {
+      document.getElementById('login-username').value = user;
+      document.getElementById('login-password').value = pass;
+    }
+
+    function showAlert(elId, message, type = 'info') {
+      const el = document.getElementById(elId);
+      el.className = `alert alert-${type} show`;
+      el.textContent = message;
+      if (elId === 'global-alert') {
+        clearTimeout(el._timer);
+        el._timer = setTimeout(() => el.classList.remove('show'), 6000);
+      }
+    }
+
+    async function apiFetch(url, options = {}) {
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+      if (authState && authState.access_token) {
+        headers['Authorization'] = `Bearer ${authState.access_token}`;
+      }
+      const res = await fetch(url, { ...options, headers });
+      let data = null;
+      try { data = await res.json(); } catch (_) { data = await res.text(); }
+      return {
+        ok: res.ok,
+        status: res.status,
+        data,
+        headers: {
+          selectedNode: res.headers.get('X-LB-Selected-Node'),
+          servedByNode: res.headers.get('X-Served-By-Node'),
+          fitness: res.headers.get('X-LB-Node-Fitness'),
+          latencyMs: res.headers.get('X-LB-Latency-Ms'),
+          hsts: res.headers.get('Strict-Transport-Security'),
+          csp: res.headers.get('Content-Security-Policy'),
+          xFrame: res.headers.get('X-Frame-Options'),
+        }
+      };
+    }
+
+    async function checkLoginClusterBadge() {
+      try {
+        const res = await fetch('/lb/status');
+        if (res.ok) {
+          const data = await res.json();
+          const healthy = data.nodes.filter(n => n.healthy).length;
+          const active = data.nodes.filter(n => n.active_in_pool).length;
+          const pill = document.getElementById('login-cluster-pill');
+          pill.textContent = `Clúster Online: ${healthy}/4 nodos sanos (${active} en pool) · ${data.algorithm_mode}`;
+        }
+      } catch (_) {}
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+      const res = await apiFetch('/api/v1/auth/token', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res.ok) {
+        showAlert('login-alert', `Error HTTP ${res.status}: ${res.data?.detail || 'Credenciales inválidas'}`, 'error');
+        return;
+      }
+      authState = { ...res.data, username };
+      sessionStorage.setItem('cloudmed_auth', JSON.stringify(authState));
+      enterPortal();
+    });
+
+    function enterPortal() {
+      document.getElementById('login-view').style.display = 'none';
+      document.getElementById('app-view').style.display = 'block';
+      document.getElementById('nav-user-name').textContent = authState.username;
+      document.getElementById('nav-user-role').textContent = `Rol: ${authState.role}`;
+      document.getElementById('session-jwt-box').textContent = JSON.stringify({
+        username: authState.username,
+        role: authState.role,
+        permissions: authState.permissions,
+        issued_by_node: authState.issued_by_node,
+        token_preview: authState.access_token.slice(0, 48) + '...'
+      }, null, 2);
+
+      showAlert('global-alert', `Sesión autenticada como "${authState.username}" (Rol: ${authState.role}) · Token emitido por ${authState.issued_by_node || 'clúster'}.`, 'success');
+      refreshClusterStatus();
+      loadRecords();
+      loadDocuments();
+      loadTelemetry();
+      loadAuditLogs();
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(refreshClusterStatus, 2000);
+    }
+
+    function logout() {
+      authState = null;
+      sessionStorage.removeItem('cloudmed_auth');
+      if (pollInterval) clearInterval(pollInterval);
+      document.getElementById('app-view').style.display = 'none';
+      document.getElementById('login-view').style.display = 'flex';
+      document.getElementById('login-alert').classList.remove('show');
+    }
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+      if (tabId === 'tab-cluster') refreshClusterStatus();
+      if (tabId === 'tab-records') loadRecords();
+      if (tabId === 'tab-documents') loadDocuments();
+      if (tabId === 'tab-telemetry') loadTelemetry();
+      if (tabId === 'tab-security') loadAuditLogs();
+    }
+
+    async function refreshClusterStatus() {
+      try {
+        const res = await fetch('/lb/status');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById('kpi-algo').textContent = data.algorithm_mode;
+        document.getElementById('algo-select').value = data.algorithm_mode;
+        const activeNodes = data.nodes.filter(n => n.active_in_pool).length;
+        document.getElementById('kpi-nodes').textContent = `${activeNodes} / ${data.nodes.length}`;
+        const n4 = data.nodes.find(n => n.node_id === 'node-4');
+        document.getElementById('kpi-nodes-sub').textContent = n4 && n4.active_in_pool
+          ? 'node-4 ACTIVO (Scale-Out)'
+          : 'node-4 en Standby Elástico';
+        document.getElementById('kpi-routed').textContent = data.total_routed;
+        document.getElementById('kpi-rl').textContent = `Bloqueadas Rate Limit: ${data.rate_limiter.blocked_requests_count}`;
+        document.getElementById('kpi-scaling').textContent = data.scaling_events.length;
+
+        const tbody = document.getElementById('cluster-nodes-tbody');
+        tbody.innerHTML = data.nodes.map(n => {
+          const badge = n.active_in_pool
+            ? '<span class="badge badge-green">ACTIVO (Pool)</span>'
+            : '<span class="badge badge-amber">STANDBY</span>';
+          const cpuPct = Math.round(n.cpu_utilization * 100);
+          return `
+            <tr>
+              <td><b>${n.node_id}</b></td>
+              <td>${n.availability_zone}</td>
+              <td>${n.capacity_weight}x</td>
+              <td>${badge}</td>
+              <td>
+                ${cpuPct}%
+                <div class="progress-bar"><div class="progress-fill" style="width:${cpuPct}%"></div></div>
+              </td>
+              <td>${n.ema_latency_ms.toFixed(1)} ms</td>
+              <td class="mono">${n.rajammal_load_index.toFixed(3)}</td>
+              <td class="mono" style="color:var(--primary);font-weight:700;">${n.rajammal_fitness_score.toFixed(2)}</td>
+              <td><b>${n.routed_requests}</b></td>
+            </tr>
+          `;
+        }).join('');
+
+        if (data.scaling_events.length > 0) {
+          document.getElementById('scaling-events-box').textContent = JSON.stringify(data.scaling_events, null, 2);
+        }
+      } catch (_) {}
+    }
+
+    async function changeAlgorithm(mode) {
+      await fetch('/lb/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ algorithm_mode: mode }),
+      });
+      showAlert('global-alert', `Algoritmo de balanceo cambiado a: ${mode}`, 'info');
+      refreshClusterStatus();
+    }
+
+    async function resetLBStats() {
+      await fetch('/lb/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset_stats: true }),
+      });
+      document.getElementById('scaling-events-box').textContent = 'Contadores reiniciados. Ejecuta una ráfaga para observar el balanceo y Auto-Scaling.';
+      refreshClusterStatus();
+    }
+
+    async function runLiveBurst() {
+      showAlert('global-alert', 'Lanzando ráfaga concurrente de 25 peticiones hacia el clúster...', 'info');
+      // Usamos token del usuario actual o pedimos token IoT para la ráfaga de telemetría
+      let burstToken = authState.access_token;
+      let endpoint = '/api/v1/telemetry';
+      if (!authState.permissions.includes('telemetry:write')) {
+        const iotLogin = await fetch('/api/v1/auth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: 'gateway.iot', password: 'IoTGateway#2026!' }),
+        }).then(r => r.json());
+        burstToken = iotLogin.access_token;
+      }
+
+      const promises = [];
+      for (let i = 0; i < 25; i++) {
+        promises.push(fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${burstToken}`,
+            'X-Client-ID': `ui-burst-${i % 5}`,
+          },
+          body: JSON.stringify({
+            device_id: `UCI-LIVE-${String(i % 8).padStart(2, '0')}`,
+            national_id: `109000${100 + i}`,
+            heart_rate_bpm: 78 + (i % 45),
+            spo2_percent: 98 - (i % 8),
+            systolic_bp: 118 + (i % 40),
+            diastolic_bp: 75 + (i % 15),
+            temperature_c: 36.7 + (i % 4) * 0.4,
+            compute_complexity: 6,
+          }),
+        }));
+      }
+      await Promise.all(promises);
+      await refreshClusterStatus();
+      loadTelemetry();
+      showAlert('global-alert', 'Ráfaga de 25 peticiones completada. Revisa la distribución por nodo y los eventos de Auto-Scaling.', 'success');
+    }
+
+    // ---- HISTORIAS CLÍNICAS ----
+    document.getElementById('record-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        national_id: document.getElementById('rec-nid').value.trim(),
+        patient_name: document.getElementById('rec-name').value.trim(),
+        specialty: document.getElementById('rec-spec').value.trim(),
+        severity_level: document.getElementById('rec-sev').value,
+        diagnosis: document.getElementById('rec-diag').value.trim(),
+        treatment: document.getElementById('rec-treat').value.trim(),
+        vital_notes: { source: 'web-portal-ui' },
+      };
+      const res = await apiFetch('/api/v1/records', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      document.getElementById('record-detail-box').textContent = JSON.stringify({
+        http_status: res.status,
+        lb_headers: res.headers,
+        response: res.data,
+      }, null, 2);
+      if (res.ok) {
+        document.getElementById('doc-rec-id').value = res.data.record_id;
+        showAlert('global-alert', `Historia clínica ${res.data.record_id} cifrada y guardada en ${res.data.processed_by_node}.`, 'success');
+        loadRecords();
+        refreshClusterStatus();
+      } else {
+        showAlert('global-alert', `Bloqueado (HTTP ${res.status}): ${res.data?.detail || 'Error'}`, 'error');
+      }
+    });
+
+    async function loadRecords() {
+      const res = await apiFetch('/api/v1/records');
+      const tbody = document.getElementById('records-tbody');
+      if (!res.ok) {
+        tbody.innerHTML = `<tr><td colspan="7" style="color:#f87171;">HTTP ${res.status} — ${res.data?.detail || 'Sin permiso RBAC (records:read)'}</td></tr>`;
+        return;
+      }
+      if (!res.data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="muted">Aún no hay historias clínicas registradas. Crea la primera en el formulario superior.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = res.data.items.map(r => `
+        <tr>
+          <td class="mono"><b>${r.record_id}</b></td>
+          <td class="mono">${r.patient_pseudonym}</td>
+          <td>${r.specialty}</td>
+          <td><span class="badge ${r.severity_level === 'CRITICAL' || r.severity_level === 'HIGH' ? 'badge-red' : 'badge-blue'}">${r.severity_level}</span></td>
+          <td>${r.processed_by_node}</td>
+          <td>${r.created_by}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="decryptRecord('${r.record_id}')">Descifrar y Ver</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function decryptRecord(recordId) {
+      const res = await apiFetch(`/api/v1/records/${recordId}`);
+      document.getElementById('record-detail-box').textContent = JSON.stringify({
+        http_status: res.status,
+        lb_headers: res.headers,
+        decrypted_record: res.data,
+      }, null, 2);
+      if (res.ok) {
+        showAlert('global-alert', `Registro ${recordId} descifrado e integridad SHA-256 verificada en ${res.data.served_by_node}.`, 'success');
+      } else {
+        showAlert('global-alert', `Error HTTP ${res.status}: ${res.data?.detail}`, 'error');
+      }
+    }
+
+    // ---- DOCUMENTOS S3 ----
+    document.getElementById('doc-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById('doc-file-input');
+      let filename = document.getElementById('doc-filename').value.trim();
+      let contentType = 'text/plain';
+      let contentB64 = '';
+
+      if (fileInput.files && fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        filename = file.name;
+        contentType = file.type || 'application/octet-stream';
+        const arrayBuf = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuf);
+        let bin = '';
+        bytes.forEach(b => bin += String.fromCharCode(b));
+        contentB64 = btoa(bin);
+      } else {
+        const txt = document.getElementById('doc-text').value;
+        contentB64 = btoa(unescape(encodeURIComponent(txt)));
+      }
+
+      const res = await apiFetch('/api/v1/documents', {
+        method: 'POST',
+        body: JSON.stringify({
+          record_id: document.getElementById('doc-rec-id').value.trim(),
+          filename,
+          content_type: contentType,
+          content_b64: contentB64,
+        }),
+      });
+      document.getElementById('doc-detail-box').textContent = JSON.stringify({
+        http_status: res.status,
+        lb_headers: res.headers,
+        response: res.data,
+      }, null, 2);
+      if (res.ok) {
+        showAlert('global-alert', `Objeto subido a S3 con SSE-KMS: ${res.data.object_key}`, 'success');
+        loadDocuments();
+      } else {
+        showAlert('global-alert', `Bloqueado (HTTP ${res.status}): ${res.data?.detail}`, 'error');
+      }
+    });
+
+    async function loadDocuments() {
+      const res = await apiFetch('/api/v1/documents/list');
+      const tbody = document.getElementById('docs-tbody');
+      if (!res.ok) {
+        tbody.innerHTML = `<tr><td colspan="6" style="color:#f87171;">HTTP ${res.status} — ${res.data?.detail || 'Sin permiso RBAC (documents:read)'}</td></tr>`;
+        return;
+      }
+      if (!res.data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="muted">No hay objetos almacenados en el bucket S3 aún.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = res.data.items.map(d => `
+        <tr>
+          <td class="mono">${d.object_key}</td>
+          <td>${d.filename}</td>
+          <td>${d.size_bytes} B</td>
+          <td class="mono">${d.sha256_plaintext.slice(0, 14)}...</td>
+          <td>${d.processed_by_node}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="downloadDocument('${encodeURIComponent(d.object_key)}')">Descifrar S3</button></td>
+        </tr>
+      `).join('');
+    }
+
+    async function downloadDocument(encodedKey) {
+      const res = await apiFetch(`/api/v1/documents?object_key=${encodedKey}`);
+      document.getElementById('doc-detail-box').textContent = JSON.stringify({
+        http_status: res.status,
+        lb_headers: res.headers,
+        decrypted_object: res.data,
+      }, null, 2);
+      if (res.ok) {
+        showAlert('global-alert', `Objeto descifrado y verificado con SHA-256 en ${res.data.served_by_node}.`, 'success');
+      }
+    }
+
+    // ---- TELEMETRÍA IOT ----
+    function presetTelemetry(mode) {
+      if (mode === 'critical') {
+        document.getElementById('tel-hr').value = 138;
+        document.getElementById('tel-spo2').value = 88.5;
+        document.getElementById('tel-sys').value = 172;
+        document.getElementById('tel-dia').value = 104;
+        document.getElementById('tel-temp').value = 39.2;
+        document.getElementById('tel-comp').value = 7;
+      } else {
+        document.getElementById('tel-hr').value = 76;
+        document.getElementById('tel-spo2').value = 98.4;
+        document.getElementById('tel-sys').value = 118;
+        document.getElementById('tel-dia').value = 76;
+        document.getElementById('tel-temp').value = 36.7;
+        document.getElementById('tel-comp').value = 2;
+      }
+    }
+
+    document.getElementById('telemetry-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        device_id: document.getElementById('tel-dev').value.trim(),
+        national_id: document.getElementById('tel-nid').value.trim(),
+        heart_rate_bpm: Number(document.getElementById('tel-hr').value),
+        spo2_percent: Number(document.getElementById('tel-spo2').value),
+        systolic_bp: Number(document.getElementById('tel-sys').value),
+        diastolic_bp: Number(document.getElementById('tel-dia').value),
+        temperature_c: Number(document.getElementById('tel-temp').value),
+        compute_complexity: Number(document.getElementById('tel-comp').value),
+      };
+      const res = await apiFetch('/api/v1/telemetry', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      document.getElementById('telemetry-detail-box').textContent = JSON.stringify({
+        http_status: res.status,
+        lb_headers: res.headers,
+        response: res.data,
+      }, null, 2);
+      if (res.ok) {
+        const msg = res.data.anomaly_detected
+          ? `¡ANOMALÍA CLÍNICA DETECTADA! Riesgo=${res.data.risk_score} (Nodo: ${res.data.processed_by_node})`
+          : `Telemetría normal procesada en ${res.data.processed_by_node} (Riesgo=${res.data.risk_score})`;
+        showAlert('global-alert', msg, res.data.anomaly_detected ? 'error' : 'success');
+        loadTelemetry();
+        refreshClusterStatus();
+      } else {
+        showAlert('global-alert', `Bloqueado (HTTP ${res.status}): ${res.data?.detail}`, 'error');
+      }
+    });
+
+    async function loadTelemetry() {
+      const res = await apiFetch('/api/v1/telemetry');
+      const tbody = document.getElementById('telemetry-tbody');
+      if (!res.ok) {
+        tbody.innerHTML = `<tr><td colspan="7" style="color:#f87171;">HTTP ${res.status} — ${res.data?.detail || 'Sin permiso RBAC (telemetry:read)'}</td></tr>`;
+        return;
+      }
+      if (!res.data.items.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="muted">Sin lecturas de telemetría registradas todavía.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = res.data.items.map(t => `
+        <tr>
+          <td class="mono">${t.telemetry_id}</td>
+          <td>${t.device_id}</td>
+          <td class="mono">${t.patient_pseudonym}</td>
+          <td>${t.heart_rate_bpm} bpm · ${t.spo2_percent}% · ${t.systolic_bp}/${t.diastolic_bp} · ${t.temperature_c}°C</td>
+          <td><b>${t.risk_score}</b></td>
+          <td>${t.anomaly_detected ? '<span class="badge badge-red">ANOMALÍA</span>' : '<span class="badge badge-green">NORMAL</span>'}</td>
+          <td>${t.processed_by_node}</td>
+        </tr>
+      `).join('');
+    }
+
+    // ---- SEGURIDAD MINTIC, WAF Y AUDITORÍA ----
+    async function verifyAuditChain() {
+      const res = await apiFetch('/api/v1/audit/verify');
+      document.getElementById('security-lab-box').textContent = JSON.stringify({
+        test: 'Verificación Criptográfica de Cadena de Auditoría SHA-256 (MSPI AU-9)',
+        http_status: res.status,
+        security_headers: res.headers,
+        result: res.data,
+      }, null, 2);
+      if (res.ok && res.data.intact) {
+        showAlert('global-alert', `Cadena de auditoría ÍNTEGRA al 100% (${res.data.verified_records} eventos verificados).`, 'success');
+      } else {
+        showAlert('global-alert', `HTTP ${res.status}: ${res.data?.detail || 'Solo rol admin puede verificar auditoría'}`, 'error');
+      }
+    }
+
+    async function testWafSqli() {
+      const res = await apiFetch('/api/v1/records', {
+        method: 'POST',
+        body: JSON.stringify({
+          national_id: '1099887766',
+          patient_name: 'Prueba WAF',
+          specialty: 'Seguridad',
+          diagnosis: "Fiebre '; DROP TABLE clinical_records; UNION SELECT * FROM users --",
+          treatment: 'Test SQLi',
+          severity_level: 'LOW',
+        }),
+      });
+      document.getElementById('security-lab-box').textContent = JSON.stringify({
+        test: 'Simulación de Ataque SQL Injection contra WAF MinTIC (MSPI SI-10)',
+        http_status: res.status,
+        expected: 'HTTP 403 Forbidden (WAF Block)',
+        security_headers: res.headers,
+        response: res.data,
+      }, null, 2);
+      showAlert('global-alert', `Prueba SQLi respondida con HTTP ${res.status}: ${res.data?.detail}`, res.status === 403 ? 'success' : 'error');
+      loadAuditLogs();
+    }
+
+    async function testWafXss() {
+      const xssPayload = "\x3cscript\x3ealert('xss')\x3c/script\x3e";
+      const res = await apiFetch('/api/v1/records/REC-TEST?filter=' + encodeURIComponent(xssPayload));
+      document.getElementById('security-lab-box').textContent = JSON.stringify({
+        test: 'Simulación de Ataque XSS codificado en URL contra WAF MinTIC (MSPI SI-10)',
+        http_status: res.status,
+        expected: 'HTTP 403 Forbidden (WAF Block)',
+        security_headers: res.headers,
+        response: res.data,
+      }, null, 2);
+      showAlert('global-alert', `Prueba XSS respondida con HTTP ${res.status}: ${res.data?.detail}`, res.status === 403 ? 'success' : 'error');
+      loadAuditLogs();
+    }
+
+    async function loadStorageSummary() {
+      const res = await apiFetch('/api/v1/storage/summary');
+      document.getElementById('security-lab-box').textContent = JSON.stringify({
+        test: 'Resumen Consolidado de Almacenamiento Cloud (RDS + S3 + IoT + Auditoría)',
+        http_status: res.status,
+        result: res.data,
+      }, null, 2);
+    }
+
+    async function loadAuditLogs() {
+      const res = await apiFetch('/api/v1/audit/logs');
+      const tbody = document.getElementById('audit-tbody');
+      if (!res.ok) {
+        tbody.innerHTML = `<tr><td colspan="8" style="color:#fbbf24;">HTTP ${res.status} — ${res.data?.detail || 'Inicia sesión como Admin MSPI (admin.seguridad) para consultar la cadena de auditoría.'}</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = res.data.items.map(a => `
+        <tr>
+          <td>${a.seq_id}</td>
+          <td class="mono">${a.event_id}</td>
+          <td>${a.actor} <span class="muted">(${a.role})</span></td>
+          <td><b>${a.action}</b></td>
+          <td class="mono">${a.resource_id}</td>
+          <td>${a.node_id}</td>
+          <td><span class="badge ${a.status === 'SUCCESS' ? 'badge-green' : 'badge-red'}">${a.status}</span></td>
+          <td class="mono">${a.entry_hash.slice(0, 14)}...</td>
+        </tr>
+      `).join('');
+    }
+
+    // Restaurar sesión si existe en sessionStorage
+    (function init() {
+      checkLoginClusterBadge();
+      const saved = sessionStorage.getItem('cloudmed_auth');
+      if (saved) {
+        try {
+          authState = JSON.parse(saved);
+          enterPortal();
+        } catch (_) {
+          sessionStorage.removeItem('cloudmed_auth');
+        }
+      }
+    })();
+  </script>
+</body>
+</html>
