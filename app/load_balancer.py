@@ -7,11 +7,21 @@ y controles de seguridad perimetral MinTIC (2021).
 import asyncio
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
+
+STATIC_INDEX_PATH = Path(__file__).resolve().parent / "static" / "index.html"
+FAVICON_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+    '<rect width="64" height="64" rx="14" fill="#0284c7"/>'
+    '<text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" '
+    'fill="#ffffff" font-family="Arial,sans-serif" font-weight="bold" font-size="28">CM</text>'
+    '</svg>'
+)
 
 
 # Pesos multicriterio del modelo dinámico (Rajammal et al., 2025)
@@ -331,73 +341,16 @@ async def on_shutdown() -> None:
         await http_client.aclose()
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    return Response(content=FAVICON_SVG, media_type="image/svg+xml")
+
+
 @app.get("/", response_class=HTMLResponse)
-async def dashboard_home() -> str:
-    """Dashboard HTML interactivo para visualizar el estado del clúster y controles de seguridad."""
-    nodes_rows = ""
-    for n in controller.nodes:
-        d = n.to_dict()
-        badge = "ACTIVO (Pool)" if d["active_in_pool"] else "STANDBY (Auto-Scaling)"
-        color = "#10b981" if d["active_in_pool"] else "#f59e0b"
-        nodes_rows += f"""
-        <tr>
-            <td><b>{d['node_id']}</b></td>
-            <td>{d['availability_zone']}</td>
-            <td>{d['capacity_weight']}x</td>
-            <td><span style="color:{color};font-weight:bold;">{badge}</span></td>
-            <td>{d['cpu_utilization']*100:.1f}%</td>
-            <td>{d['ema_latency_ms']:.1f} ms</td>
-            <td>{d['rajammal_load_index']:.3f}</td>
-            <td><b>{d['rajammal_fitness_score']:.2f}</b></td>
-            <td>{d['routed_requests']}</td>
-        </tr>
-        """
-    return f"""
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="utf-8"/>
-        <title>CloudMedVault - Consola Cloud & Balanceador Dinámico</title>
-        <style>
-            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 2rem; }}
-            h1 {{ color: #38bdf8; margin-bottom: 0.2rem; }}
-            .subtitle {{ color: #94a3b8; margin-bottom: 1.5rem; }}
-            .card {{ background: #1e293b; border-radius: 10px; padding: 1.2rem 1.5rem; margin-bottom: 1.5rem; border: 1px solid #334155; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 0.8rem; }}
-            th, td {{ padding: 0.65rem; text-align: left; border-bottom: 1px solid #334155; }}
-            th {{ color: #38bdf8; font-size: 0.9rem; text-transform: uppercase; }}
-            .pill {{ display: inline-block; padding: 0.25rem 0.6rem; border-radius: 6px; background: #0284c7; font-size: 0.85rem; margin-right: 0.4rem; }}
-        </style>
-    </head>
-    <body>
-        <h1>CloudMedVault — Cloud Security & Dynamic Load Balancer</h1>
-        <div class="subtitle">
-            Arquitectura Cloud AWS de Referencia | Cumplimiento MinTIC (2021) MSPI | Balanceo Dinámico Multicriterio (Rajammal et al., 2025)
-        </div>
-        <div class="card">
-            <h3>Controles de Seguridad Activos (MinTIC 2021 / Ley 1581 de 2012)</h3>
-            <span class="pill">AES-256-GCM (Datos en Reposo RDS + S3 SSE-KMS)</span>
-            <span class="pill">IAM / OAuth2 JWT + RBAC</span>
-            <span class="pill">Pseudonimización HMAC-SHA256</span>
-            <span class="pill">WAF OWASP + Rate Limiting Anti-DDoS</span>
-            <span class="pill">Cadena de Auditoría SHA-256 Inmutable</span>
-        </div>
-        <div class="card">
-            <h3>Estado en Tiempo Real del Clúster de Cómputo ({controller.algorithm_mode})</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Nodo</th><th>Zona (AZ)</th><th>Capacidad</th><th>Estado Pool</th>
-                        <th>CPU</th><th>Latencia EMA</th><th>Índice Carga L(t)</th>
-                        <th>Aptitud F(t)</th><th>Peticiones</th>
-                    </tr>
-                </thead>
-                <tbody>{nodes_rows}</tbody>
-            </table>
-        </div>
-    </body>
-    </html>
-    """
+async def dashboard_home() -> HTMLResponse:
+    """Sirve el portal web interactivo de CloudMedVault (Login IAM + Consola Cloud + Módulos Clínicos)."""
+    html_content = STATIC_INDEX_PATH.read_text(encoding="utf-8")
+    return HTMLResponse(content=html_content)
 
 
 @app.get("/lb/status")
@@ -454,7 +407,7 @@ async def lb_history() -> Dict[str, Any]:
     }
 
 
-@app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE"], include_in_schema=False)
 async def proxy_to_compute_cluster(full_path: str, request: Request) -> Response:
     """
     Enruta dinámicamente las peticiones de negocio hacia el nodo óptimo del clúster
